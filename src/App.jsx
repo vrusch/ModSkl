@@ -1,14 +1,9 @@
-// --- FIREBASE CONFIGURATION & INIT ---
 import React, { useState, useMemo, useEffect } from "react";
 import {
   Plus,
   Search,
   Trash2,
-  AlertCircle,
-  CheckCircle2,
-  Droplets,
   Paintbrush,
-  Filter,
   X,
   Wand2,
   HelpCircle,
@@ -21,6 +16,7 @@ import {
   CloudCog,
   Loader2,
   Share2,
+  Droplets,
 } from "lucide-react";
 import { initializeApp } from "firebase/app";
 import {
@@ -39,105 +35,73 @@ import {
   onSnapshot,
 } from "firebase/firestore";
 
-// --- FIREBASE CONFIGURATION & INIT ---
-const firebaseConfig = JSON.parse(__firebase_config);
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const appId = typeof __app_id !== "undefined" ? __app_id : "default-app-id";
+// ==============================================================================
+// 🔧 KONFIGURACE FIREBASE
+// ==============================================================================
 
-// --- DATABASE OF PAINTS ---
+// 1. Manuální konfigurace pro VERCEL / LOCALHOST
+// Tyto údaje získáte na https://console.firebase.google.com/
+// Postup:
+// 1. Vytvořte nový projekt na Firebase Console.
+// 2. Klikněte na ikonu Webu (</>) pro přidání aplikace.
+// 3. Zkopírujte hodnoty z 'const firebaseConfig = { ... }', které se vám zobrazí.
+// 4. Vložte je mezi uvozovky níže:
+
+const manualConfig = {
+  apiKey: "AIzaSyDxyk9dxHuMa53v0O0LoPqHQ7yP3DnvvLA", // Sem vložte apiKey (např. "AIzaSyD-...")
+  authDomain: "mod-skl.firebaseapp.com", // Sem vložte authDomain (např. "muj-projekt.firebaseapp.com")
+  projectId: "mod-skl", // Sem vložte projectId (např. "muj-projekt-123")
+  storageBucket: "mod-skl.firebasestorage.app", // Sem vložte storageBucket
+  messagingSenderId: "623957881771", // Sem vložte messagingSenderId
+  appId: "1:623957881771:web:42d1de685b0defb411d8ee",
+  measurementId: "G-2GPPKZS2T3", // Sem vložte appId
+};
+
+// 2. Automatická detekce konfigurace
+let firebaseConfig;
+let currentAppId;
+
+// Zjištění, zda běžíme v prostředí Canvas (zde) nebo jinde (Vercel/Local)
+if (typeof __firebase_config !== "undefined") {
+  // Jsme v Canvas prostředí - použijeme systémové proměnné
+  firebaseConfig = JSON.parse(__firebase_config);
+  currentAppId = typeof __app_id !== "undefined" ? __app_id : "default-app-id";
+} else {
+  // Jsme na Vercelu nebo localhostu - použijeme manuální konfiguraci
+  // Pokud není vyplněna, použijeme prázdný objekt, aby aplikace hned nespadla (ale v logu bude chyba)
+  firebaseConfig = manualConfig.apiKey ? manualConfig : {};
+  currentAppId = "modelarsky-sklad-v1"; // Zde si můžete zvolit vlastní ID pro DB
+}
+
+// Inicializace Firebase
+let app, auth, db;
+try {
+  // Kontrola, zda máme config (pro případ, že uživatel nevyplnil manualConfig na Vercelu)
+  if (firebaseConfig.apiKey) {
+    app = initializeApp(firebaseConfig);
+    auth = getAuth(app);
+    db = getFirestore(app);
+  } else {
+    console.warn(
+      "Chybí Firebase konfigurace! Pokud běžíte na Vercelu, vyplňte 'manualConfig' v App.jsx.",
+    );
+  }
+} catch (error) {
+  console.error("Chyba inicializace Firebase:", error);
+}
+
+// ==============================================================================
+
+// Databáze známých barev
 const COLOR_DB = {
-  // --- TAMIYA (X - Lesklé) ---
   "TAMIYA-X1": { name: "Black", hex: "#000000", type: "Akryl" },
   "TAMIYA-X2": { name: "White", hex: "#ffffff", type: "Akryl" },
-  "TAMIYA-X3": { name: "Royal Blue", hex: "#002868", type: "Akryl" },
-  "TAMIYA-X4": { name: "Blue", hex: "#0000ff", type: "Akryl" },
-  "TAMIYA-X5": { name: "Green", hex: "#008000", type: "Akryl" },
-  "TAMIYA-X6": { name: "Orange", hex: "#ffa500", type: "Akryl" },
   "TAMIYA-X7": { name: "Red", hex: "#cc0000", type: "Akryl" },
-  "TAMIYA-X8": { name: "Lemon Yellow", hex: "#fff44f", type: "Akryl" },
-  "TAMIYA-X9": { name: "Brown", hex: "#a52a2a", type: "Akryl" },
-  "TAMIYA-X10": { name: "Gun Metal", hex: "#2a2a2a", type: "Akryl" },
-  "TAMIYA-X11": { name: "Chrome Silver", hex: "#c0c0c0", type: "Akryl" },
-  "TAMIYA-X12": { name: "Gold Leaf", hex: "#ffd700", type: "Akryl" },
-  "TAMIYA-X13": { name: "Metallic Blue", hex: "#4169e1", type: "Akryl" },
-  "TAMIYA-X18": { name: "Semi Gloss Black", hex: "#1a1a1a", type: "Akryl" },
-  "TAMIYA-X22": { name: "Clear", hex: "#ffffff", type: "Akryl" },
-  "TAMIYA-X27": { name: "Clear Red", hex: "#cc0000", type: "Akryl" },
-
-  // --- TAMIYA (XF - Matné) ---
   "TAMIYA-XF1": { name: "Flat Black", hex: "#1a1a1a", type: "Akryl" },
   "TAMIYA-XF2": { name: "Flat White", hex: "#f0f0f0", type: "Akryl" },
-  "TAMIYA-XF3": { name: "Flat Yellow", hex: "#e6e600", type: "Akryl" },
-  "TAMIYA-XF4": { name: "Yellow Green", hex: "#9acd32", type: "Akryl" },
-  "TAMIYA-XF5": { name: "Flat Green", hex: "#354a21", type: "Akryl" },
-  "TAMIYA-XF6": { name: "Copper", hex: "#b87333", type: "Akryl" },
-  "TAMIYA-XF7": { name: "Flat Red", hex: "#b82525", type: "Akryl" },
-  "TAMIYA-XF8": { name: "Flat Blue", hex: "#00008b", type: "Akryl" },
-  "TAMIYA-XF9": { name: "Hull Red", hex: "#800000", type: "Akryl" },
-  "TAMIYA-XF10": { name: "Flat Brown", hex: "#8b4513", type: "Akryl" },
-  "TAMIYA-XF15": { name: "Flat Flesh", hex: "#ffcc99", type: "Akryl" },
-  "TAMIYA-XF16": { name: "Flat Aluminum", hex: "#a8a9ad", type: "Akryl" },
-  "TAMIYA-XF19": { name: "Sky Grey", hex: "#808080", type: "Akryl" },
-  "TAMIYA-XF20": { name: "Medium Grey", hex: "#a9a9a9", type: "Akryl" },
-  "TAMIYA-XF24": { name: "Dark Grey", hex: "#4d5d53", type: "Akryl" },
-  "TAMIYA-XF49": { name: "Khaki", hex: "#f0e68c", type: "Akryl" },
-  "TAMIYA-XF52": { name: "Flat Earth", hex: "#734a32", type: "Akryl" },
-  "TAMIYA-XF53": { name: "Neutral Grey", hex: "#708090", type: "Akryl" },
-  "TAMIYA-XF56": { name: "Metallic Grey", hex: "#708090", type: "Akryl" },
-  "TAMIYA-XF57": { name: "Buff", hex: "#d6b88e", type: "Akryl" },
-  "TAMIYA-XF58": { name: "Olive Green", hex: "#556b2f", type: "Akryl" },
-  "TAMIYA-XF59": { name: "Desert Yellow", hex: "#f4a460", type: "Akryl" },
   "TAMIYA-XF60": { name: "Dark Yellow", hex: "#a69e65", type: "Akryl" },
-  "TAMIYA-XF61": { name: "Dark Green", hex: "#3b4d3b", type: "Akryl" },
-  "TAMIYA-XF62": { name: "Olive Drab", hex: "#6b8e23", type: "Akryl" },
-  "TAMIYA-XF63": { name: "German Grey", hex: "#4d5257", type: "Akryl" },
-  "TAMIYA-XF64": { name: "Red Brown", hex: "#a52a2a", type: "Akryl" },
-  "TAMIYA-XF66": { name: "Light Grey", hex: "#d3d3d3", type: "Akryl" },
-  "TAMIYA-XF67": { name: "NATO Green", hex: "#4b5540", type: "Akryl" },
-  "TAMIYA-XF68": { name: "NATO Brown", hex: "#5d4037", type: "Akryl" },
-  "TAMIYA-XF69": { name: "NATO Black", hex: "#1f1f1f", type: "Akryl" },
-  "TAMIYA-XF84": { name: "Dark Iron", hex: "#3a3a3a", type: "Akryl" },
-  "TAMIYA-XF85": { name: "Rubber Black", hex: "#2b2b2b", type: "Akryl" },
-  "TAMIYA-XF86": { name: "Flat Clear", hex: "#f5f5f5", type: "Akryl" },
-
-  // --- TAMIYA (LP - Lacquer) ---
-  "TAMIYA-LP1": { name: "Black", hex: "#000000", type: "Lacquer" },
-  "TAMIYA-LP2": { name: "White", hex: "#ffffff", type: "Lacquer" },
-  "TAMIYA-LP3": { name: "Flat Black", hex: "#1a1a1a", type: "Lacquer" },
-  "TAMIYA-LP4": { name: "Flat White", hex: "#f0f0f0", type: "Lacquer" },
-  "TAMIYA-LP11": { name: "Silver", hex: "#c0c0c0", type: "Lacquer" },
-  "TAMIYA-LP38": { name: "Flat Aluminum", hex: "#a8a9ad", type: "Lacquer" },
-  "TAMIYA-LP81": { name: "Mixing Blue", hex: "#0047ab", type: "Lacquer" },
-
-  // --- MR. HOBBY (Gunze) ---
-  "MRHOBBY-H1": { name: "White", hex: "#ffffff", type: "Akryl" },
-  "MRHOBBY-H2": { name: "Black", hex: "#000000", type: "Akryl" },
-  "MRHOBBY-H3": { name: "Red", hex: "#ff0000", type: "Akryl" },
-  "MRHOBBY-H8": { name: "Silver", hex: "#c0c0c0", type: "Akryl" },
-  "MRHOBBY-H12": { name: "Flat Black", hex: "#1a1a1a", type: "Akryl" },
-  "MRHOBBY-H76": { name: "Burnt Iron", hex: "#4a3c3c", type: "Akryl" },
-  "MRHOBBY-C33": { name: "Flat Black", hex: "#1a1a1a", type: "Lacquer" },
-  "MRHOBBY-C62": { name: "Flat White", hex: "#f0f0f0", type: "Lacquer" },
-
-  // --- AK INTERACTIVE ---
-  "AKINTERACTIVE-AK11001": { name: "White", hex: "#ffffff", type: "3rd Gen" },
-  "AKINTERACTIVE-AK11029": { name: "Black", hex: "#000000", type: "3rd Gen" },
-  "AKINTERACTIVE-RC001": {
-    name: "Matt Black",
-    hex: "#1a1a1a",
-    type: "Real Color",
-  },
-
-  // --- VALLEJO ---
   "VALLEJO-70950": { name: "Black", hex: "#000000", type: "Model Color" },
-  "VALLEJO-70951": { name: "White", hex: "#ffffff", type: "Model Color" },
-  "VALLEJO-70957": { name: "Flat Red", hex: "#a61c00", type: "Model Color" },
-  "VALLEJO-70862": { name: "Black Grey", hex: "#2e2e2e", type: "Model Color" },
-  "VALLEJO-70997": { name: "Silver", hex: "#c0c0c0", type: "Model Color" },
-  "VALLEJO-71057": { name: "Black", hex: "#000000", type: "Model Air" },
-  "VALLEJO-71001": { name: "White", hex: "#ffffff", type: "Model Air" },
+  // ... lze doplnit další ...
 };
 
 export default function App() {
@@ -147,16 +111,19 @@ export default function App() {
 
   // Správa ID Skladu (Warehouse ID) pro synchronizaci
   const [warehouseId, setWarehouseId] = useState(() => {
-    // Zkusíme načíst uložené ID, jinak vygenerujeme nové
-    const saved = localStorage.getItem("modelarsky_warehouse_id");
-    if (saved) return saved;
-    const newId = Math.random().toString(36).substring(2, 7).toUpperCase();
-    localStorage.setItem("modelarsky_warehouse_id", newId);
-    return newId;
+    try {
+      const saved = localStorage.getItem("modelarsky_warehouse_id");
+      if (saved) return saved;
+      const newId = Math.random().toString(36).substring(2, 7).toUpperCase();
+      localStorage.setItem("modelarsky_warehouse_id", newId);
+      return newId;
+    } catch (e) {
+      return "DEMO";
+    }
   });
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isSyncModalOpen, setIsSyncModalOpen] = useState(false); // Modál pro nastavení sync
+  const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [editingWarehouseId, setEditingWarehouseId] = useState(warehouseId);
 
   const [searchTerm, setSearchTerm] = useState("");
@@ -179,59 +146,90 @@ export default function App() {
 
   // --- FIREBASE AUTH ---
   useEffect(() => {
+    if (!auth) {
+      setIsLoading(false);
+      return;
+    }
+
     const initAuth = async () => {
-      if (typeof __initial_auth_token !== "undefined" && __initial_auth_token) {
-        await signInWithCustomToken(auth, __initial_auth_token);
-      } else {
-        await signInAnonymously(auth);
+      try {
+        // Pokud jsme v Canvas prostředí, použijeme speciální token (pokud existuje)
+        if (
+          typeof __initial_auth_token !== "undefined" &&
+          __initial_auth_token
+        ) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          // Jinak (Vercel/Local) se přihlásíme anonymně
+          await signInAnonymously(auth);
+        }
+      } catch (err) {
+        console.error("Chyba přihlášení:", err);
       }
     };
     initAuth();
+
     const unsubscribe = onAuthStateChanged(auth, setUser);
     return () => unsubscribe();
   }, []);
 
   // --- FIREBASE DATA SYNC ---
   useEffect(() => {
-    if (!user) return;
+    if (!user || !db) return;
     setIsLoading(true);
 
-    // Používáme veřejnou kolekci 'paints' a filtrujeme v paměti podle warehouseId
-    // Toto umožňuje snadné sdílení bez složitého nastavování oprávnění v tomto demu
-    const q = collection(db, "artifacts", appId, "public", "data", "paints");
+    try {
+      // Cesta k datům: artifacts/{appId}/public/data/paints
+      const q = collection(
+        db,
+        "artifacts",
+        currentAppId,
+        "public",
+        "data",
+        "paints",
+      );
 
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const allPaints = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
+      const unsubscribe = onSnapshot(
+        q,
+        (snapshot) => {
+          const allPaints = snapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          }));
 
-        // Filtrujeme pouze barvy patřící k aktuálnímu ID skladu
-        const myPaints = allPaints.filter((p) => p.warehouseId === warehouseId);
+          // Filtrujeme podle ID skladu (jednoduché sdílení)
+          const myPaints = allPaints.filter(
+            (p) => p.warehouseId === warehouseId,
+          );
 
-        // Seřadíme podle času vložení (simulováno pomocí timestamp, pokud existuje, nebo názvu)
-        myPaints.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+          // Seřadíme nejnovější nahoře
+          myPaints.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
-        setPaints(myPaints);
-        setIsLoading(false);
-      },
-      (error) => {
-        console.error("Chyba při načítání dat:", error);
-        setIsLoading(false);
-      },
-    );
+          setPaints(myPaints);
+          setIsLoading(false);
+        },
+        (error) => {
+          console.error("Chyba při načítání dat:", error);
+          setIsLoading(false);
+          setSaveStatus("chyba připojení");
+        },
+      );
 
-    return () => unsubscribe();
+      return () => unsubscribe();
+    } catch (err) {
+      console.error("Chyba nastavení listeneru:", err);
+      setIsLoading(false);
+    }
   }, [user, warehouseId]);
 
-  // Efekt pro uložení warehouse ID při změně
+  // Uložení warehouse ID
   useEffect(() => {
-    localStorage.setItem("modelarsky_warehouse_id", warehouseId);
+    try {
+      localStorage.setItem("modelarsky_warehouse_id", warehouseId);
+    } catch (e) {}
   }, [warehouseId]);
 
-  // Efekt pro automatickou detekci barvy (stejný jako dříve)
+  // Efekt pro automatickou detekci barvy
   useEffect(() => {
     if (!isModalOpen) return;
     const cleanCode = newPaint.code.replace(/[\s.-]/g, "");
@@ -264,7 +262,7 @@ export default function App() {
     }
   }, [newPaint.brand, customBrand, newPaint.code, isModalOpen]);
 
-  // Vymazání chybové hlášky
+  // Reset chybové hlášky
   useEffect(() => {
     setSubmitError("");
   }, [newPaint.code, newPaint.brand, newPaint.status, customBrand]);
@@ -284,11 +282,16 @@ export default function App() {
   const ownedCount = paints.filter((p) => p.status === "owned").length;
   const buyCount = paints.filter((p) => p.status === "buy").length;
 
-  // --- HANDLERS (CRUD with Firestore) ---
+  // --- CRUD OPERACE ---
 
   const handleAddPaint = async (e) => {
     e.preventDefault();
-    if (!user) return;
+    if (!user || !db) {
+      setSubmitError(
+        "Chyba: Nejste připojeni k databázi (zkontrolujte config).",
+      );
+      return;
+    }
     setSubmitError("");
 
     const finalBrand = newPaint.brand === "Jiné" ? customBrand : newPaint.brand;
@@ -299,7 +302,6 @@ export default function App() {
       return;
     }
 
-    // Kontrola duplicit (v rámci aktuálně načtených dat)
     const duplicate = paints.find(
       (p) =>
         p.brand === finalBrand &&
@@ -312,21 +314,19 @@ export default function App() {
         newPaint.status === "owned"
           ? "ve sbírce (Mám doma)"
           : "v nákupním seznamu";
-      setSubmitError(
-        `Barvu ${finalBrand} ${finalCode} již máte ${listName}. Nelze přidat duplicitně.`,
-      );
+      setSubmitError(`Barvu ${finalBrand} ${finalCode} již máte ${listName}.`);
       return;
     }
 
     try {
       setSaveStatus("ukládám...");
       await addDoc(
-        collection(db, "artifacts", appId, "public", "data", "paints"),
+        collection(db, "artifacts", currentAppId, "public", "data", "paints"),
         {
           ...newPaint,
           brand: finalBrand,
           code: finalCode,
-          warehouseId: warehouseId, // Důležité: přiřadíme k aktuálnímu skladu
+          warehouseId: warehouseId,
           createdAt: Date.now(),
         },
       );
@@ -354,11 +354,11 @@ export default function App() {
   };
 
   const handleDelete = async (id) => {
-    if (!user) return;
+    if (!user || !db) return;
     if (confirm("Opravdu smazat tuto barvu z cloudu?")) {
       try {
         await deleteDoc(
-          doc(db, "artifacts", appId, "public", "data", "paints", id),
+          doc(db, "artifacts", currentAppId, "public", "data", "paints", id),
         );
       } catch (err) {
         console.error(err);
@@ -368,11 +368,11 @@ export default function App() {
   };
 
   const toggleStatus = async (id, currentStatus) => {
-    if (!user) return;
+    if (!user || !db) return;
     try {
       const newStatus = currentStatus === "owned" ? "buy" : "owned";
       await updateDoc(
-        doc(db, "artifacts", appId, "public", "data", "paints", id),
+        doc(db, "artifacts", currentAppId, "public", "data", "paints", id),
         {
           status: newStatus,
         },
@@ -389,7 +389,6 @@ export default function App() {
     }
     setWarehouseId(editingWarehouseId.trim().toUpperCase());
     setIsSyncModalOpen(false);
-    // Data se automaticky načtou znovu díky useEffect závislosti na warehouseId
   };
 
   return (
@@ -408,7 +407,6 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Tlačítko pro nastavení synchronizace */}
             <button
               onClick={() => {
                 setEditingWarehouseId(warehouseId);
@@ -499,6 +497,14 @@ export default function App() {
           <div className="flex flex-col items-center justify-center py-12 text-slate-500 gap-2">
             <Loader2 size={32} className="animate-spin text-blue-500" />
             <p className="text-sm">Načítám data z cloudu...</p>
+            {!firebaseConfig.apiKey && (
+              <p className="text-xs text-red-400 mt-2 px-4 text-center">
+                Pokud toto vidíte v náhledu (Canvas), zkuste obnovit stránku.
+                <br />
+                Pokud na Vercelu/Localhost, zkontrolujte{" "}
+                <code>manualConfig</code>.
+              </p>
+            )}
           </div>
         ) : filteredPaints.length === 0 ? (
           <div className="text-center py-12 text-slate-500">
@@ -509,8 +515,8 @@ export default function App() {
                 : "Nákupní seznam je prázdný."}
             </p>
             <p className="text-xs mt-4 opacity-50 max-w-[200px] mx-auto">
-              Pokud máte data na jiném zařízení, ověřte, že máte stejné{" "}
-              <strong>ID Skladu</strong> (ikona mráčku).
+              Použijte stejné <strong>ID Skladu</strong> na všech zařízeních pro
+              sdílení.
             </p>
           </div>
         ) : (
@@ -576,7 +582,7 @@ export default function App() {
         )}
       </div>
 
-      {/* Modál: Synchronizace (Nastavení ID skladu) */}
+      {/* Modál: Synchronizace */}
       {isSyncModalOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-slate-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl border border-slate-700">
@@ -594,8 +600,8 @@ export default function App() {
 
             <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700 mb-4">
               <p className="text-sm text-slate-300 mb-2">
-                Aby se data zobrazila na druhém zařízení (např. v mobilu i na
-                PC), zadejte na obou zařízeních stejné ID.
+                Aby se data zobrazila na druhém zařízení, zadejte na obou
+                zařízeních stejné ID.
               </p>
               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
                 Vaše ID Skladu
