@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, Search, Trash2, AlertCircle, CheckCircle2, Droplets, Paintbrush, Filter, X, Wand2, HelpCircle, Save } from 'lucide-react';
+import { Plus, Search, Trash2, AlertCircle, CheckCircle2, Droplets, Paintbrush, Filter, X, Wand2, HelpCircle, Save, ShoppingCart, Check, Package } from 'lucide-react';
 
 // Databáze známých barev pro automatické doplňování
 // Klíč je formát: "ZNAČKA-KÓD" (vše velkým, bez mezer a teček pro lepší shodu)
@@ -93,17 +93,28 @@ const COLOR_DB = {
 };
 
 // Výchozí data pro nového uživatele (pokud nemá nic uloženo)
+// Poznámka: Změnil jsem status na 'owned' a 'buy' pro novou logiku
 const DEFAULT_PAINTS = [
-  { id: 1, brand: 'Tamiya', code: 'XF-1', name: 'Flat Black', type: 'Akryl', status: 'ok', hex: '#1a1a1a' },
-  { id: 2, brand: 'Tamiya', code: 'XF-60', name: 'Dark Yellow', type: 'Akryl', status: 'low', hex: '#a69e65' },
+  { id: 1, brand: 'Tamiya', code: 'XF-1', name: 'Flat Black', type: 'Akryl', status: 'owned', hex: '#1a1a1a' },
+  { id: 2, brand: 'Tamiya', code: 'XF-60', name: 'Dark Yellow', type: 'Akryl', status: 'buy', hex: '#a69e65' },
 ];
 
 export default function App() {
-  // Načtení dat z LocalStorage při startu
+  // Načtení dat z LocalStorage při startu + MIGRACE STARÝCH DAT
   const [paints, setPaints] = useState(() => {
     try {
       const savedPaints = localStorage.getItem('modelarskySkladData');
-      return savedPaints ? JSON.parse(savedPaints) : DEFAULT_PAINTS;
+      if (savedPaints) {
+        let parsed = JSON.parse(savedPaints);
+        
+        // MIGRACE: Převede staré stavy (ok, low, empty) na nové (owned, buy)
+        return parsed.map(p => {
+            if (p.status === 'ok') return { ...p, status: 'owned' }; // Mám doma
+            if (p.status === 'low' || p.status === 'empty') return { ...p, status: 'buy' }; // Koupit
+            return p;
+        });
+      }
+      return DEFAULT_PAINTS;
     } catch (e) {
       console.error('Chyba při načítání dat', e);
       return DEFAULT_PAINTS;
@@ -112,18 +123,21 @@ export default function App() {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterStatus, setFilterStatus] = useState('all');
+  
+  // Změna: 'activeTab' místo 'filterStatus'
+  const [activeTab, setActiveTab] = useState('owned'); // 'owned' (Mám) nebo 'buy' (Koupit)
+  
   const [autoDetectFound, setAutoDetectFound] = useState(false);
   const [autoDetectError, setAutoDetectError] = useState(false);
   const [customBrand, setCustomBrand] = useState('');
-  const [saveStatus, setSaveStatus] = useState(''); // Indikátor uložení
+  const [saveStatus, setSaveStatus] = useState(''); 
 
   const [newPaint, setNewPaint] = useState({
     brand: 'Tamiya',
     code: '',
     name: '',
     type: 'Akryl',
-    status: 'ok',
+    status: 'owned', // Výchozí: Mám doma
     hex: '#808080'
   });
 
@@ -177,6 +191,7 @@ export default function App() {
     }
   }, [newPaint.brand, customBrand, newPaint.code, isModalOpen]);
 
+  // Filtrování podle Tabu (Mám vs Koupit)
   const filteredPaints = useMemo(() => {
     return paints.filter(paint => {
       const matchesSearch = 
@@ -184,14 +199,15 @@ export default function App() {
         paint.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
         paint.brand.toLowerCase().includes(searchTerm.toLowerCase());
       
-      const matchesStatus = 
-        filterStatus === 'all' ? true :
-        filterStatus === 'low' ? (paint.status === 'low' || paint.status === 'empty') :
-        paint.status === paint.status;
+      const matchesTab = paint.status === activeTab;
 
-      return matchesSearch && matchesStatus;
+      return matchesSearch && matchesTab;
     });
-  }, [paints, searchTerm, filterStatus]);
+  }, [paints, searchTerm, activeTab]);
+
+  // Statistiky pro taby
+  const ownedCount = paints.filter(p => p.status === 'owned').length;
+  const buyCount = paints.filter(p => p.status === 'buy').length;
 
   const handleAddPaint = (e) => {
     e.preventDefault();
@@ -206,10 +222,17 @@ export default function App() {
     setPaints([...paints, { ...newPaint, brand: finalBrand, id: Date.now() }]);
     setIsModalOpen(false);
     
-    setNewPaint({ brand: 'Tamiya', code: '', name: '', type: 'Akryl', status: 'ok', hex: '#808080' });
+    // Zůstaneme ve formuláři na stejném cíli (Mám/Koupit), ale vyčistíme data
+    setNewPaint(prev => ({ 
+        brand: 'Tamiya', code: '', name: '', type: 'Akryl', hex: '#808080',
+        status: prev.status // Zachováme volbu kam přidávat
+    }));
     setCustomBrand('');
     setAutoDetectFound(false);
     setAutoDetectError(false);
+    
+    // Přepneme pohled tam, kam jsme přidali barvu, aby ji uživatel viděl
+    setActiveTab(newPaint.status);
   };
 
   const handleDelete = (id) => {
@@ -221,29 +244,11 @@ export default function App() {
   const toggleStatus = (id) => {
     setPaints(paints.map(p => {
       if (p.id === id) {
-        const nextStatus = p.status === 'ok' ? 'low' : p.status === 'low' ? 'empty' : 'ok';
-        return { ...p, status: nextStatus };
+        // Jednoduché přepnutí mezi 'owned' a 'buy'
+        return { ...p, status: p.status === 'owned' ? 'buy' : 'owned' };
       }
       return p;
     }));
-  };
-
-  const getStatusColor = (status) => {
-    switch(status) {
-      case 'ok': return 'bg-green-100 text-green-700 border-green-200';
-      case 'low': return 'bg-orange-100 text-orange-700 border-orange-200';
-      case 'empty': return 'bg-red-100 text-red-700 border-red-200';
-      default: return 'bg-gray-100';
-    }
-  };
-
-  const getStatusText = (status) => {
-    switch(status) {
-      case 'ok': return 'Skladem';
-      case 'low': return 'Dochází';
-      case 'empty': return 'Prázdné';
-      default: return '';
-    }
   };
 
   return (
@@ -267,7 +272,7 @@ export default function App() {
           </button>
         </div>
 
-        {/* Vyhledávání a filtry */}
+        {/* Vyhledávání a Taby */}
         <div className="max-w-md mx-auto px-4 pb-4 space-y-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
@@ -280,33 +285,44 @@ export default function App() {
             />
           </div>
           
-          <div className="flex justify-between items-center">
-            <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
-              <button 
-                onClick={() => setFilterStatus('all')}
-                className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
-                  filterStatus === 'all' ? 'bg-slate-700 text-white' : 'bg-slate-800 text-slate-400 border border-slate-700'
-                }`}
-              >
-                Vše ({paints.length})
-              </button>
-              <button 
-                onClick={() => setFilterStatus('low')}
-                className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap flex items-center gap-1 transition-colors ${
-                  filterStatus === 'low' ? 'bg-orange-900/50 text-orange-200 border-orange-500/50' : 'bg-slate-800 text-slate-400 border border-slate-700'
-                }`}
-              >
-                <AlertCircle size={14} />
-                Dochází / Prázdné
-              </button>
-            </div>
-            {/* Indikátor uložení */}
-            {saveStatus && (
-               <div className="text-xs text-green-400 flex items-center gap-1 animate-pulse px-2">
-                 <Save size={12} /> {saveStatus}
-               </div>
-            )}
+          {/* Nové přepínání Tabů */}
+          <div className="flex bg-slate-950 p-1 rounded-xl">
+            <button 
+              onClick={() => setActiveTab('owned')}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all ${
+                activeTab === 'owned' 
+                  ? 'bg-slate-800 text-white shadow-sm' 
+                  : 'text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              <Package size={16} />
+              Mám doma
+              <span className="bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded text-xs">{ownedCount}</span>
+            </button>
+            <button 
+              onClick={() => setActiveTab('buy')}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all ${
+                activeTab === 'buy' 
+                  ? 'bg-slate-800 text-orange-400 shadow-sm' 
+                  : 'text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              <ShoppingCart size={16} />
+              Koupit
+              {buyCount > 0 && (
+                <span className="bg-orange-900/50 text-orange-400 px-1.5 py-0.5 rounded text-xs">{buyCount}</span>
+              )}
+            </button>
           </div>
+            
+          {/* Indikátor uložení */}
+          {saveStatus && (
+              <div className="text-right">
+                <span className="text-xs text-green-400 flex items-center justify-end gap-1 animate-pulse px-2">
+                    <Save size={12} /> {saveStatus}
+                </span>
+              </div>
+          )}
         </div>
       </div>
 
@@ -315,7 +331,11 @@ export default function App() {
         {filteredPaints.length === 0 ? (
           <div className="text-center py-12 text-slate-500">
             <Droplets size={48} className="mx-auto mb-3 opacity-20" />
-            <p>Žádné barvy nenalezeny.</p>
+            <p>
+                {activeTab === 'owned' 
+                    ? 'Ve sbírce zatím nic není.' 
+                    : 'Nákupní seznam je prázdný.'}
+            </p>
           </div>
         ) : (
           filteredPaints.map((paint) => (
@@ -343,22 +363,25 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="flex flex-col items-end gap-2">
+              <div className="flex items-center gap-2">
+                {/* Tlačítko pro změnu stavu */}
                 <button 
                   onClick={() => toggleStatus(paint.id)}
-                  className={`px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-1 transition-colors ${getStatusColor(paint.status)}`}
+                  title={activeTab === 'owned' ? "Došlo - přidat do nákupního seznamu" : "Koupeno - přidat do sbírky"}
+                  className={`p-2 rounded-lg border transition-colors ${
+                      activeTab === 'owned' 
+                      ? 'bg-slate-700 border-slate-600 text-slate-300 hover:text-orange-400 hover:border-orange-500/50' 
+                      : 'bg-green-900/20 border-green-500/30 text-green-400 hover:bg-green-900/40'
+                  }`}
                 >
-                  {paint.status === 'ok' && <CheckCircle2 size={12} />}
-                  {paint.status === 'low' && <AlertCircle size={12} />}
-                  {paint.status === 'empty' && <X size={12} />}
-                  {getStatusText(paint.status)}
+                  {activeTab === 'owned' ? <ShoppingCart size={20} /> : <Check size={20} />}
                 </button>
                 
                 <button 
                   onClick={() => handleDelete(paint.id)}
                   className="p-2 text-slate-600 hover:text-red-400 transition-colors"
                 >
-                  <Trash2 size={18} />
+                  <Trash2 size={20} />
                 </button>
               </div>
             </div>
@@ -378,6 +401,28 @@ export default function App() {
             </div>
 
             <form onSubmit={handleAddPaint} className="space-y-4">
+              {/* Výběr kam uložit (Mám / Koupit) */}
+              <div className="flex bg-slate-900 p-1 rounded-lg mb-4">
+                  <button
+                    type="button"
+                    onClick={() => setNewPaint({...newPaint, status: 'owned'})}
+                    className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${
+                        newPaint.status === 'owned' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Mám doma
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewPaint({...newPaint, status: 'buy'})}
+                    className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${
+                        newPaint.status === 'buy' ? 'bg-orange-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Chci koupit
+                  </button>
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-1">
                   <label className="block text-xs text-slate-400 mb-1">Značka</label>
@@ -386,7 +431,6 @@ export default function App() {
                     value={newPaint.brand}
                     onChange={(e) => {
                       setNewPaint({...newPaint, brand: e.target.value});
-                      // Pokud uživatel přepne zpět z "Jiné", smažeme customBrand pro čistotu
                       if (e.target.value !== 'Jiné') setCustomBrand('');
                     }}
                   >
@@ -419,7 +463,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Pole pro vlastní značku se zobrazí jen když je vybráno "Jiné" */}
+              {/* Pole pro vlastní značku */}
               {newPaint.brand === 'Jiné' && (
                 <div className="animate-in fade-in slide-in-from-top-2 duration-300">
                   <label className="block text-xs text-slate-400 mb-1">Název vlastní značky</label>
@@ -503,7 +547,7 @@ export default function App() {
                   type="submit" 
                   className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl shadow-lg active:scale-95 transition-all"
                 >
-                  Uložit do seznamu
+                  Uložit
                 </button>
               </div>
             </form>
