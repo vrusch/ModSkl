@@ -1,3 +1,4 @@
+// --- FIREBASE CONFIGURATION & INIT ---
 import React, { useState, useMemo, useEffect } from "react";
 import {
   Plus,
