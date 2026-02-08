@@ -94,7 +94,7 @@ const generateSafeDocId = (brand, code) => {
 // Pro nasazení na Vercel prohoďte komentáře u VERZE A a VERZE B.
 
 // --- VERZE A: PRO VERCEL (Odkomentujte před deployem) ---
-/*
+
 const manualConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -102,11 +102,11 @@ const manualConfig = {
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
-*/
 
 // --- VERZE B: PRO LOKÁLNÍ VÝVOJ / EDITOR (Nechte aktivní zde) ---
+/*
 const manualConfig = {
   apiKey:
     typeof process !== "undefined" && process.env
@@ -137,6 +137,7 @@ const manualConfig = {
       ? process.env.VITE_FIREBASE_MEASUREMENT_ID
       : "",
 };
+*/
 // --------------------------------------------------------
 
 let firebaseConfig;
