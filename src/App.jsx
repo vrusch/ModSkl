@@ -52,36 +52,59 @@ import {
 // 🔧 KONFIGURACE A KONSTANTY
 // ==============================================================================
 
-// Funkce pro dynamické získání proměnných, která funguje na Vercelu i v Canvasu
-const getEnvVar = (key) => {
-  try {
-    // 1. Pokus: Vercel / Vite (použijeme trik s new Function, aby editor nehlásil syntax error)
-    // Toto se provede za běhu prohlížeče
-    const metaEnv = new Function(
-      "try { return import.meta.env; } catch(e) { return {}; }",
-    )();
-    if (metaEnv && metaEnv[key]) return metaEnv[key];
-  } catch (e) {}
+// ⚠️ INSTRUKCE PRO NASAZENÍ (DEPLOY) NA VERCEL ⚠️
+//
+// PRO VERCEL:
+// 1. SMAŽTE symboly "/*" a "*/" okolo bloku VERZE A (tím ho aktivujete).
+// 2. PŘIDEJTE symboly "/*" a "*/" okolo bloku VERZE B (tím ho deaktivujete).
 
-  try {
-    // 2. Pokus: Process env (pro Canvas / Node prostředí)
-    if (typeof process !== "undefined" && process.env && process.env[key]) {
-      return process.env[key];
-    }
-  } catch (e) {}
-
-  return "";
-};
-
+// --- VERZE A: PRO VERCEL (Odkomentujte před deployem) ---
+/*
 const manualConfig = {
-  apiKey: getEnvVar("VITE_FIREBASE_API_KEY"),
-  authDomain: getEnvVar("VITE_FIREBASE_AUTH_DOMAIN"),
-  projectId: getEnvVar("VITE_FIREBASE_PROJECT_ID"),
-  storageBucket: getEnvVar("VITE_FIREBASE_STORAGE_BUCKET"),
-  messagingSenderId: getEnvVar("VITE_FIREBASE_MESSAGING_SENDER_ID"),
-  appId: getEnvVar("VITE_FIREBASE_APP_ID"),
-  measurementId: getEnvVar("VITE_FIREBASE_MEASUREMENT_ID"),
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
+*/
+
+// --- VERZE B: PRO TENTO EDITOR (Nechte aktivní zde) ---
+// Pokud toto neodkomentujete na Vercelu, nic se nestane, jen to nebude fungovat,
+// ale Verze A je pro Vercel nutná.
+const manualConfig = {
+  apiKey:
+    typeof process !== "undefined" && process.env
+      ? process.env.VITE_FIREBASE_API_KEY
+      : "",
+  authDomain:
+    typeof process !== "undefined" && process.env
+      ? process.env.VITE_FIREBASE_AUTH_DOMAIN
+      : "",
+  projectId:
+    typeof process !== "undefined" && process.env
+      ? process.env.VITE_FIREBASE_PROJECT_ID
+      : "",
+  storageBucket:
+    typeof process !== "undefined" && process.env
+      ? process.env.VITE_FIREBASE_STORAGE_BUCKET
+      : "",
+  messagingSenderId:
+    typeof process !== "undefined" && process.env
+      ? process.env.VITE_FIREBASE_MESSAGING_SENDER_ID
+      : "",
+  appId:
+    typeof process !== "undefined" && process.env
+      ? process.env.VITE_FIREBASE_APP_ID
+      : "",
+  measurementId:
+    typeof process !== "undefined" && process.env
+      ? process.env.VITE_FIREBASE_MEASUREMENT_ID
+      : "",
+};
+// --------------------------------------------------------
 
 let firebaseConfig;
 let currentAppId;
@@ -536,7 +559,6 @@ const EditModal = ({
       return;
     }
 
-    // Volání onSave a čekání na výsledek
     const success = await onSave({
       ...formData,
       brand: finalBrand,
@@ -550,7 +572,6 @@ const EditModal = ({
       );
       setIsSaving(false);
     }
-    // Pokud úspěch, modal se zavře díky logice v rodiči (App), který ho odrenderuje
   };
 
   return (
