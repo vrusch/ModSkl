@@ -59,7 +59,7 @@ import {
 // 2. PŘIDEJTE symboly "/*" a "*/" okolo bloku VERZE B (tím ho deaktivujete).
 
 // --- VERZE A: PRO VERCEL (Odkomentujte před deployem) ---
-/*
+
 const manualConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -67,13 +67,13 @@ const manualConfig = {
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
-*/
 
 // --- VERZE B: PRO TENTO EDITOR (Nechte aktivní zde) ---
 // Pokud toto neodkomentujete na Vercelu, nic se nestane, jen to nebude fungovat,
 // ale Verze A je pro Vercel nutná.
+/*
 const manualConfig = {
   apiKey:
     typeof process !== "undefined" && process.env
@@ -104,6 +104,7 @@ const manualConfig = {
       ? process.env.VITE_FIREBASE_MEASUREMENT_ID
       : "",
 };
+*/
 // --------------------------------------------------------
 
 let firebaseConfig;
