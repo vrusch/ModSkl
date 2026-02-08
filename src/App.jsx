@@ -80,34 +80,13 @@ const manualConfig = {
 // ale Verze A je pro Vercel nutná.
 /*
 const manualConfig = {
-  apiKey:
-    typeof process !== "undefined" && process.env
-      ? process.env.VITE_FIREBASE_API_KEY
-      : "",
-  authDomain:
-    typeof process !== "undefined" && process.env
-      ? process.env.VITE_FIREBASE_AUTH_DOMAIN
-      : "",
-  projectId:
-    typeof process !== "undefined" && process.env
-      ? process.env.VITE_FIREBASE_PROJECT_ID
-      : "",
-  storageBucket:
-    typeof process !== "undefined" && process.env
-      ? process.env.VITE_FIREBASE_STORAGE_BUCKET
-      : "",
-  messagingSenderId:
-    typeof process !== "undefined" && process.env
-      ? process.env.VITE_FIREBASE_MESSAGING_SENDER_ID
-      : "",
-  appId:
-    typeof process !== "undefined" && process.env
-      ? process.env.VITE_FIREBASE_APP_ID
-      : "",
-  measurementId:
-    typeof process !== "undefined" && process.env
-      ? process.env.VITE_FIREBASE_MEASUREMENT_ID
-      : "",
+  apiKey: (typeof process !== 'undefined' && process.env) ? process.env.VITE_FIREBASE_API_KEY : "",
+  authDomain: (typeof process !== 'undefined' && process.env) ? process.env.VITE_FIREBASE_AUTH_DOMAIN : "",
+  projectId: (typeof process !== 'undefined' && process.env) ? process.env.VITE_FIREBASE_PROJECT_ID : "",
+  storageBucket: (typeof process !== 'undefined' && process.env) ? process.env.VITE_FIREBASE_STORAGE_BUCKET : "",
+  messagingSenderId: (typeof process !== 'undefined' && process.env) ? process.env.VITE_FIREBASE_MESSAGING_SENDER_ID : "",
+  appId: (typeof process !== 'undefined' && process.env) ? process.env.VITE_FIREBASE_APP_ID : "",
+  measurementId: (typeof process !== 'undefined' && process.env) ? process.env.VITE_FIREBASE_MEASUREMENT_ID : ""
 };
 */
 // --------------------------------------------------------
@@ -160,9 +139,6 @@ const STANDARD_TYPES = [
   "Wash",
   "Pigment",
 ];
-
-// !!! COLOR_DB BYLO ODSTRANĚNO Z KÓDU PRO ODLEHČENÍ APLIKACE !!!
-// Nyní se data načítají z kolekce 'catalog' ve Firestore.
 
 // ==============================================================================
 // 🧩 KOMPONENTY
@@ -348,7 +324,7 @@ const StatsBar = ({ activeTab, setActiveTab, ownedCount, buyCount }) => (
   </div>
 );
 
-// 4. Settings Modal
+// 4. Settings Modal (UPRAVENO PRO BEZPEČNOST SEEDU)
 const SettingsModal = ({
   onClose,
   warehouseId,
@@ -358,6 +334,7 @@ const SettingsModal = ({
   onImportData,
   isImporting,
   onSeedCatalog,
+  catalogSize,
 }) => {
   const [tempId, setTempId] = useState(warehouseId);
   const fileInputRef = useRef(null);
@@ -404,21 +381,35 @@ const SettingsModal = ({
           </button>
         </div>
 
-        {/* Tlačítko pro inicializaci katalogu - POUZE JEDNOU */}
+        {/* OCHRANA TLAČÍTKA SEED - Zmizí, pokud je katalog aktivní */}
         <div className="bg-indigo-900/30 p-4 rounded-xl border border-indigo-500/30 mb-6">
-          <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-2 flex items-center gap-2">
-            <Database size={12} /> Cloud Katalog
-          </h4>
-          <p className="text-[10px] text-slate-400 mb-3">
-            Nahrát základní databázi barev (Tamiya, Gunze, Vallejo) do cloudu.
-            Použijte pouze pokud našeptávač nic nenabízí.
-          </p>
-          <button
-            onClick={onSeedCatalog}
-            className="w-full bg-indigo-600/80 hover:bg-indigo-600 text-white py-2 rounded-lg text-xs font-bold"
-          >
-            Nahrát základní katalog (Seed)
-          </button>
+          {catalogSize > 0 ? (
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2 text-green-400 text-xs font-bold">
+                <Check size={16} />
+                <span>Katalog je aktivní ({catalogSize} položek)</span>
+              </div>
+              <p className="text-[10px] text-slate-500">
+                Našeptávač je plně funkční a čerpá data z cloudu.
+              </p>
+            </div>
+          ) : (
+            <>
+              <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+                <Database size={12} /> Cloud Katalog
+              </h4>
+              <p className="text-[10px] text-slate-400 mb-3">
+                Nahrát základní databázi barev (Tamiya, Gunze, Vallejo) do
+                cloudu. Použijte pouze pokud našeptávač nic nenabízí.
+              </p>
+              <button
+                onClick={onSeedCatalog}
+                className="w-full bg-indigo-600/80 hover:bg-indigo-600 text-white py-2 rounded-lg text-xs font-bold"
+              >
+                Nahrát základní katalog (Seed)
+              </button>
+            </>
+          )}
         </div>
 
         <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700 space-y-3">
@@ -1282,6 +1273,7 @@ export default function App() {
           onImportData={handleImport}
           isImporting={isImporting}
           onSeedCatalog={handleSeedCatalog}
+          catalogSize={catalog.length}
         />
       )}
       {isModalOpen && (
