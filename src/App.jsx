@@ -351,7 +351,6 @@ const StatsBar = ({ activeTab, setActiveTab, ownedCount, buyCount }) => (
 
 // 4. Modal Settings (Import/Export)
 const SettingsModal = ({
-  isOpen,
   onClose,
   warehouseId,
   setWarehouseId,
@@ -360,7 +359,7 @@ const SettingsModal = ({
   onImportData,
   isImporting,
 }) => {
-  if (!isOpen) return null;
+  // ODSTRANĚNO: if (!isOpen) return null; - toto bylo chybné, renderování řídí rodič
   const [tempId, setTempId] = useState(warehouseId);
   const fileInputRef = useRef(null);
 
@@ -461,46 +460,66 @@ const SettingsModal = ({
 
 // 5. Edit/Add Modal - The Form
 const EditModal = ({
-  isOpen,
   onClose,
   editingId,
   onSave,
   activeTab,
   existingPaints,
 }) => {
-  if (!isOpen) return null;
+  // ODSTRANĚNO: if (!isOpen) return null; - toto bylo chybné, renderování řídí rodič
 
-  const [formData, setFormData] = useState({
-    brand: "Tamiya",
-    code: "",
-    name: "",
-    type: "Akryl",
-    status: activeTab,
-    hex: "#808080",
-    note: "",
-    thinner: "",
-    ratio: "",
-  });
-  const [customBrand, setCustomBrand] = useState("");
-  const [customType, setCustomType] = useState("");
-  const [autoDetectFound, setAutoDetectFound] = useState(false);
-  const [submitError, setSubmitError] = useState("");
-
-  // Load data if editing
-  useEffect(() => {
+  // Inicializace stavu - Pokud máme editingId, najdeme barvu, jinak default
+  // Používáme funkci v useState pro lazy initialization (zavolá se jen při prvním renderu této instance)
+  const [formData, setFormData] = useState(() => {
     if (editingId) {
       const paint = existingPaints.find((p) => p.id === editingId);
       if (paint) {
-        const isStdBrand = STANDARD_BRANDS.includes(paint.brand);
-        const isStdType = STANDARD_TYPES.includes(paint.type);
-        setFormData({ ...paint });
-        setCustomBrand(isStdBrand ? "" : paint.brand);
-        setCustomType(isStdType ? "" : paint.type);
-        if (!isStdBrand) setFormData((prev) => ({ ...prev, brand: "Jiná..." }));
-        if (!isStdType) setFormData((prev) => ({ ...prev, type: "Jiný..." }));
+        // Vrátíme nalezenou barvu
+        return { ...paint };
       }
     }
-  }, [editingId, existingPaints]);
+    // Výchozí hodnoty pro novou barvu
+    return {
+      brand: "Tamiya",
+      code: "",
+      name: "",
+      type: "Akryl",
+      status: activeTab,
+      hex: "#808080",
+      note: "",
+      thinner: "",
+      ratio: "",
+    };
+  });
+
+  const [customBrand, setCustomBrand] = useState(() => {
+    if (
+      editingId &&
+      formData.brand &&
+      !STANDARD_BRANDS.includes(formData.brand)
+    )
+      return formData.brand;
+    return "";
+  });
+
+  const [customType, setCustomType] = useState(() => {
+    if (editingId && formData.type && !STANDARD_TYPES.includes(formData.type))
+      return formData.type;
+    return "";
+  });
+
+  // Korekce dropdownů pokud je custom hodnota
+  useEffect(() => {
+    if (editingId) {
+      if (!STANDARD_BRANDS.includes(formData.brand))
+        setFormData((prev) => ({ ...prev, brand: "Jiná..." }));
+      if (!STANDARD_TYPES.includes(formData.type))
+        setFormData((prev) => ({ ...prev, type: "Jiný..." }));
+    }
+  }, []); // Jen při startu
+
+  const [autoDetectFound, setAutoDetectFound] = useState(false);
+  const [submitError, setSubmitError] = useState("");
 
   // Auto-detect logic
   useEffect(() => {
@@ -518,6 +537,7 @@ const EditModal = ({
     if (foundPaint) {
       setAutoDetectFound(true);
       if (!editingId) {
+        // Jen pokud nepřepisujeme existující barvu
         setFormData((prev) => ({
           ...prev,
           name: foundPaint.name,
@@ -1082,25 +1102,27 @@ export default function App() {
         )}
       </div>
 
-      <SettingsModal
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        warehouseId={warehouseId}
-        setWarehouseId={setWarehouseId}
-        onExportData={handleExportJson}
-        onExportList={handleExportTxt}
-        onImportData={handleImport}
-        isImporting={isImporting}
-      />
+      {isSettingsOpen && (
+        <SettingsModal
+          onClose={() => setIsSettingsOpen(false)}
+          warehouseId={warehouseId}
+          setWarehouseId={setWarehouseId}
+          onExportData={handleExportJson}
+          onExportList={handleExportTxt}
+          onImportData={handleImport}
+          isImporting={isImporting}
+        />
+      )}
 
-      <EditModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        editingId={editingId}
-        onSave={handleSavePaint}
-        activeTab={activeTab}
-        existingPaints={paints}
-      />
+      {isModalOpen && (
+        <EditModal
+          onClose={() => setIsModalOpen(false)}
+          editingId={editingId}
+          onSave={handleSavePaint}
+          activeTab={activeTab}
+          existingPaints={paints}
+        />
+      )}
     </div>
   );
 }
