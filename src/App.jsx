@@ -30,6 +30,7 @@ import {
   Upload,
   FileText,
   FlaskConical,
+  Database,
 } from "lucide-react";
 import { initializeApp } from "firebase/app";
 import {
@@ -46,6 +47,10 @@ import {
   updateDoc,
   doc,
   onSnapshot,
+  query,
+  where,
+  getDocs,
+  writeBatch,
 } from "firebase/firestore";
 
 // ==============================================================================
@@ -75,13 +80,34 @@ const manualConfig = {
 // ale Verze A je pro Vercel nutná.
 /*
 const manualConfig = {
-  apiKey: (typeof process !== 'undefined' && process.env) ? process.env.VITE_FIREBASE_API_KEY : "",
-  authDomain: (typeof process !== 'undefined' && process.env) ? process.env.VITE_FIREBASE_AUTH_DOMAIN : "",
-  projectId: (typeof process !== 'undefined' && process.env) ? process.env.VITE_FIREBASE_PROJECT_ID : "",
-  storageBucket: (typeof process !== 'undefined' && process.env) ? process.env.VITE_FIREBASE_STORAGE_BUCKET : "",
-  messagingSenderId: (typeof process !== 'undefined' && process.env) ? process.env.VITE_FIREBASE_MESSAGING_SENDER_ID : "",
-  appId: (typeof process !== 'undefined' && process.env) ? process.env.VITE_FIREBASE_APP_ID : "",
-  measurementId: (typeof process !== 'undefined' && process.env) ? process.env.VITE_FIREBASE_MEASUREMENT_ID : ""
+  apiKey:
+    typeof process !== "undefined" && process.env
+      ? process.env.VITE_FIREBASE_API_KEY
+      : "",
+  authDomain:
+    typeof process !== "undefined" && process.env
+      ? process.env.VITE_FIREBASE_AUTH_DOMAIN
+      : "",
+  projectId:
+    typeof process !== "undefined" && process.env
+      ? process.env.VITE_FIREBASE_PROJECT_ID
+      : "",
+  storageBucket:
+    typeof process !== "undefined" && process.env
+      ? process.env.VITE_FIREBASE_STORAGE_BUCKET
+      : "",
+  messagingSenderId:
+    typeof process !== "undefined" && process.env
+      ? process.env.VITE_FIREBASE_MESSAGING_SENDER_ID
+      : "",
+  appId:
+    typeof process !== "undefined" && process.env
+      ? process.env.VITE_FIREBASE_APP_ID
+      : "",
+  measurementId:
+    typeof process !== "undefined" && process.env
+      ? process.env.VITE_FIREBASE_MEASUREMENT_ID
+      : "",
 };
 */
 // --------------------------------------------------------
@@ -105,7 +131,6 @@ try {
     auth = getAuth(app);
     db = getFirestore(app);
   } else {
-    // Tento výpis uvidíte v konzoli, pokud se config nepodaří načíst
     console.warn(
       "DEBUG: API Key nenalezen. Aplikace poběží v offline režimu (bez DB).",
     );
@@ -136,17 +161,8 @@ const STANDARD_TYPES = [
   "Pigment",
 ];
 
-const COLOR_DB = {
-  "TAMIYA-X1": { name: "Black", hex: "#000000", type: "Akryl" },
-  "TAMIYA-X2": { name: "White", hex: "#ffffff", type: "Akryl" },
-  "TAMIYA-XF1": { name: "Flat Black", hex: "#1a1a1a", type: "Akryl" },
-  "TAMIYA-XF2": { name: "Flat White", hex: "#f0f0f0", type: "Akryl" },
-  "GUNZE-H1": { name: "White", hex: "#ffffff", type: "Akryl" },
-  "GUNZE-H2": { name: "Black", hex: "#000000", type: "Akryl" },
-  "GUNZE-C1": { name: "White", hex: "#ffffff", type: "Lacquer" },
-  "VALLEJO-70950": { name: "Black", hex: "#000000", type: "Akryl" },
-  "VALLEJO-70951": { name: "White", hex: "#ffffff", type: "Akryl" },
-};
+// !!! COLOR_DB BYLO ODSTRANĚNO Z KÓDU PRO ODLEHČENÍ APLIKACE !!!
+// Nyní se data načítají z kolekce 'catalog' ve Firestore.
 
 // ==============================================================================
 // 🧩 KOMPONENTY
@@ -341,6 +357,7 @@ const SettingsModal = ({
   onExportList,
   onImportData,
   isImporting,
+  onSeedCatalog,
 }) => {
   const [tempId, setTempId] = useState(warehouseId);
   const fileInputRef = useRef(null);
@@ -386,6 +403,24 @@ const SettingsModal = ({
             Uložit nové ID
           </button>
         </div>
+
+        {/* Tlačítko pro inicializaci katalogu - POUZE JEDNOU */}
+        <div className="bg-indigo-900/30 p-4 rounded-xl border border-indigo-500/30 mb-6">
+          <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+            <Database size={12} /> Cloud Katalog
+          </h4>
+          <p className="text-[10px] text-slate-400 mb-3">
+            Nahrát základní databázi barev (Tamiya, Gunze, Vallejo) do cloudu.
+            Použijte pouze pokud našeptávač nic nenabízí.
+          </p>
+          <button
+            onClick={onSeedCatalog}
+            className="w-full bg-indigo-600/80 hover:bg-indigo-600 text-white py-2 rounded-lg text-xs font-bold"
+          >
+            Nahrát základní katalog (Seed)
+          </button>
+        </div>
+
         <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700 space-y-3">
           <button
             onClick={onExportData}
@@ -440,6 +475,7 @@ const EditModal = ({
   onSave,
   activeTab,
   existingPaints,
+  catalog,
 }) => {
   const [formData, setFormData] = useState(() => {
     if (editingId) {
@@ -482,16 +518,47 @@ const EditModal = ({
     }
   }, []);
 
+  // --- INTELIGENTNÍ NAŠEPTÁVAČ (Katalog + Osobní paměť) ---
   useEffect(() => {
     const cleanCode = formData.code.replace(/[\s.-]/g, "");
     if (cleanCode.length === 0) {
       setAutoDetectFound(false);
       return;
     }
+
     const currentBrand =
       formData.brand === "Jiná..." ? customBrand : formData.brand;
-    const brandForSearch = currentBrand.toUpperCase().replace(/[\s.-]/g, "");
-    const foundPaint = COLOR_DB[`${brandForSearch}-${cleanCode}`];
+    const normalize = (str) =>
+      str ? str.toUpperCase().replace(/[\s.-]/g, "") : "";
+    const searchBrand = normalize(currentBrand);
+
+    // 1. Hledání v CLOUD KATALOGU
+    let foundPaint = catalog.find(
+      (item) =>
+        normalize(item.brand) === searchBrand &&
+        normalize(item.code) === cleanCode.toUpperCase(),
+    );
+
+    // 2. OSOBNÍ PAMĚŤ: Pokud není v katalogu, hledáme v existujících barvách uživatele
+    if (!foundPaint) {
+      const memoryMatch = existingPaints.find(
+        (p) =>
+          normalize(p.brand) === searchBrand &&
+          normalize(p.code) === cleanCode.toUpperCase(),
+      );
+
+      // Pokud najdeme shodu v paměti, použijeme ji jako vzor
+      if (memoryMatch) {
+        foundPaint = {
+          name: memoryMatch.name,
+          hex: memoryMatch.hex,
+          type: memoryMatch.type,
+          brand: memoryMatch.brand, // Zachováme formátování
+          code: memoryMatch.code, // Zachováme formátování
+        };
+      }
+    }
+
     if (foundPaint) {
       setAutoDetectFound(true);
       if (!editingId) {
@@ -509,15 +576,20 @@ const EditModal = ({
     } else {
       setAutoDetectFound(false);
     }
-  }, [formData.brand, customBrand, formData.code, editingId]);
+  }, [
+    formData.brand,
+    customBrand,
+    formData.code,
+    editingId,
+    catalog,
+    existingPaints,
+  ]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitError("");
     setIsSaving(true);
 
-    // --- NORMALIZACE TEXTU (TITLE CASE) ---
-    // Helper pro "Hezký Název" (flat black -> Flat Black)
     const toTitleCase = (str) => {
       if (!str) return "";
       return str.replace(/\w\S*/g, (txt) => {
@@ -525,7 +597,6 @@ const EditModal = ({
       });
     };
 
-    // Helper pro "Sentence case" (První velké) -> pro poznámky
     const toSentenceCase = (str) => {
       if (!str) return "";
       return str.charAt(0).toUpperCase() + str.slice(1);
@@ -546,10 +617,7 @@ const EditModal = ({
       return;
     }
 
-    // --- KONTROLA DUPLICIT ---
-    // Normalizace pro porovnání (XF-2 == XF2)
     const normalize = (str) => str.replace(/[\s.-]/g, "").toUpperCase();
-
     const duplicate = existingPaints.find(
       (p) =>
         p.brand === finalBrand &&
@@ -783,6 +851,7 @@ const EditModal = ({
 export default function App() {
   const [user, setUser] = useState(null);
   const [paints, setPaints] = useState([]);
+  const [catalog, setCatalog] = useState([]); // --- NOVÝ STAV PRO KATALOG ---
   const [isLoading, setIsLoading] = useState(true);
   const [isImporting, setIsImporting] = useState(false);
 
@@ -806,7 +875,7 @@ export default function App() {
   const [activeTypeFilter, setActiveTypeFilter] = useState("all");
   const [saveStatus, setSaveStatus] = useState("");
 
-  // --- AUTH & SYNC ---
+  // --- AUTH ---
   useEffect(() => {
     if (!auth) {
       setIsLoading(false);
@@ -825,11 +894,13 @@ export default function App() {
     return onAuthStateChanged(auth, setUser);
   }, []);
 
+  // --- SYNC PAINTS & CATALOG ---
   useEffect(() => {
     if (!user || !db) return;
     setIsLoading(true);
     try {
-      const q = collection(
+      // 1. Načtení uživatelových barev
+      const paintsQuery = collection(
         db,
         "artifacts",
         currentAppId,
@@ -837,7 +908,7 @@ export default function App() {
         "data",
         "paints",
       );
-      return onSnapshot(q, (snapshot) => {
+      const unsubPaints = onSnapshot(paintsQuery, (snapshot) => {
         const allPaints = snapshot.docs.map((doc) => ({
           id: doc.id,
           ...doc.data(),
@@ -849,6 +920,25 @@ export default function App() {
         );
         setIsLoading(false);
       });
+
+      // 2. Načtení globálního katalogu (Cloud paměť)
+      const catalogQuery = collection(
+        db,
+        "artifacts",
+        currentAppId,
+        "public",
+        "data",
+        "catalog",
+      );
+      const unsubCatalog = onSnapshot(catalogQuery, (snapshot) => {
+        const catalogData = snapshot.docs.map((doc) => doc.data());
+        setCatalog(catalogData);
+      });
+
+      return () => {
+        unsubPaints();
+        unsubCatalog();
+      };
     } catch (err) {
       setIsLoading(false);
     }
@@ -859,6 +949,115 @@ export default function App() {
       localStorage.setItem("modelarsky_warehouse_id", warehouseId);
     } catch (e) {}
   }, [warehouseId]);
+
+  // --- SEED CATALOG FUNCTION (Pouze pro inicializaci) ---
+  const handleSeedCatalog = async () => {
+    if (!db) return;
+    if (
+      !confirm(
+        "Chcete nahrát základní databázi barev (Tamiya, Gunze, atd.) do cloudu? Toto stačí udělat jen jednou.",
+      )
+    )
+      return;
+
+    setIsLoading(true);
+    // Zde je dočasně definována databáze jen pro účel nahrání
+    const INITIAL_DB_SEED = [
+      {
+        brand: "Tamiya",
+        code: "X-1",
+        name: "Black",
+        hex: "#000000",
+        type: "Akryl",
+      },
+      {
+        brand: "Tamiya",
+        code: "X-2",
+        name: "White",
+        hex: "#ffffff",
+        type: "Akryl",
+      },
+      {
+        brand: "Tamiya",
+        code: "XF-1",
+        name: "Flat Black",
+        hex: "#1a1a1a",
+        type: "Akryl",
+      },
+      {
+        brand: "Tamiya",
+        code: "XF-2",
+        name: "Flat White",
+        hex: "#f0f0f0",
+        type: "Akryl",
+      },
+      {
+        brand: "Gunze",
+        code: "H1",
+        name: "White",
+        hex: "#ffffff",
+        type: "Akryl",
+      },
+      {
+        brand: "Gunze",
+        code: "H2",
+        name: "Black",
+        hex: "#000000",
+        type: "Akryl",
+      },
+      {
+        brand: "Gunze",
+        code: "C1",
+        name: "White",
+        hex: "#ffffff",
+        type: "Lacquer",
+      },
+      {
+        brand: "Vallejo",
+        code: "70.950",
+        name: "Black",
+        hex: "#000000",
+        type: "Akryl",
+      },
+      {
+        brand: "Vallejo",
+        code: "70.951",
+        name: "White",
+        hex: "#ffffff",
+        type: "Akryl",
+      },
+    ];
+
+    try {
+      const batch = writeBatch(db);
+      const catalogRef = collection(
+        db,
+        "artifacts",
+        currentAppId,
+        "public",
+        "data",
+        "catalog",
+      );
+
+      // Zkontrolujeme, co už tam je, abychom nedělali duplicity (zjednodušeně smažeme a nahrajeme)
+      // V reálu by to chtělo chytřejší merge, ale pro seed to stačí.
+      // Zde jen přidáme to, co definujeme výše.
+
+      for (const item of INITIAL_DB_SEED) {
+        const docRef = doc(catalogRef); // Auto ID
+        batch.set(docRef, item);
+      }
+
+      await batch.commit();
+      alert("Katalog byl úspěšně nahrán do cloudu!");
+      setIsSettingsOpen(false);
+    } catch (e) {
+      console.error(e);
+      alert("Chyba při nahrávání katalogu.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const availableFilterTypes = useMemo(() => {
     const uniqueTypes = new Set(STANDARD_TYPES);
@@ -904,7 +1103,7 @@ export default function App() {
   }, []);
 
   const handleSavePaint = async (paintData) => {
-    if (!db) return false; // Návratová hodnota pro modal
+    if (!db) return false;
     setSaveStatus("ukládám...");
     try {
       if (editingId)
@@ -930,10 +1129,10 @@ export default function App() {
       setSaveStatus("uloženo");
       if (activeTab !== paintData.status) setActiveTab(paintData.status);
       setTimeout(() => setSaveStatus(""), 2000);
-      return true; // Úspěch
+      return true;
     } catch (e) {
       setSaveStatus("chyba");
-      return false; // Chyba
+      return false;
     }
   };
 
@@ -1082,6 +1281,7 @@ export default function App() {
           onExportList={handleExportTxt}
           onImportData={handleImport}
           isImporting={isImporting}
+          onSeedCatalog={handleSeedCatalog}
         />
       )}
       {isModalOpen && (
@@ -1091,6 +1291,7 @@ export default function App() {
           onSave={handleSavePaint}
           activeTab={activeTab}
           existingPaints={paints}
+          catalog={catalog}
         />
       )}
     </div>
