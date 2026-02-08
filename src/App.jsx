@@ -75,34 +75,13 @@ const manualConfig = {
 // ale Verze A je pro Vercel nutná.
 /*
 const manualConfig = {
-  apiKey:
-    typeof process !== "undefined" && process.env
-      ? process.env.VITE_FIREBASE_API_KEY
-      : "",
-  authDomain:
-    typeof process !== "undefined" && process.env
-      ? process.env.VITE_FIREBASE_AUTH_DOMAIN
-      : "",
-  projectId:
-    typeof process !== "undefined" && process.env
-      ? process.env.VITE_FIREBASE_PROJECT_ID
-      : "",
-  storageBucket:
-    typeof process !== "undefined" && process.env
-      ? process.env.VITE_FIREBASE_STORAGE_BUCKET
-      : "",
-  messagingSenderId:
-    typeof process !== "undefined" && process.env
-      ? process.env.VITE_FIREBASE_MESSAGING_SENDER_ID
-      : "",
-  appId:
-    typeof process !== "undefined" && process.env
-      ? process.env.VITE_FIREBASE_APP_ID
-      : "",
-  measurementId:
-    typeof process !== "undefined" && process.env
-      ? process.env.VITE_FIREBASE_MEASUREMENT_ID
-      : "",
+  apiKey: (typeof process !== 'undefined' && process.env) ? process.env.VITE_FIREBASE_API_KEY : "",
+  authDomain: (typeof process !== 'undefined' && process.env) ? process.env.VITE_FIREBASE_AUTH_DOMAIN : "",
+  projectId: (typeof process !== 'undefined' && process.env) ? process.env.VITE_FIREBASE_PROJECT_ID : "",
+  storageBucket: (typeof process !== 'undefined' && process.env) ? process.env.VITE_FIREBASE_STORAGE_BUCKET : "",
+  messagingSenderId: (typeof process !== 'undefined' && process.env) ? process.env.VITE_FIREBASE_MESSAGING_SENDER_ID : "",
+  appId: (typeof process !== 'undefined' && process.env) ? process.env.VITE_FIREBASE_APP_ID : "",
+  measurementId: (typeof process !== 'undefined' && process.env) ? process.env.VITE_FIREBASE_MEASUREMENT_ID : ""
 };
 */
 // --------------------------------------------------------
@@ -537,25 +516,52 @@ const EditModal = ({
     setSubmitError("");
     setIsSaving(true);
 
+    // --- NORMALIZACE TEXTU (TITLE CASE) ---
+    // Helper pro "Hezký Název" (flat black -> Flat Black)
+    const toTitleCase = (str) => {
+      if (!str) return "";
+      return str.replace(/\w\S*/g, (txt) => {
+        return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase();
+      });
+    };
+
+    // Helper pro "Sentence case" (První velké) -> pro poznámky
+    const toSentenceCase = (str) => {
+      if (!str) return "";
+      return str.charAt(0).toUpperCase() + str.slice(1);
+    };
+
     const finalBrand =
-      formData.brand === "Jiná..." ? customBrand : formData.brand;
-    const finalType = formData.type === "Jiný..." ? customType : formData.type;
+      formData.brand === "Jiná..." ? toTitleCase(customBrand) : formData.brand;
+    const finalType =
+      formData.type === "Jiný..." ? toTitleCase(customType) : formData.type;
     const finalCode = formData.code.trim().toUpperCase();
+    const finalName = toTitleCase(formData.name);
+    const finalThinner = toTitleCase(formData.thinner);
+    const finalNote = toSentenceCase(formData.note);
 
     if (!finalBrand || !finalType) {
       setSubmitError("Vyplňte značku a typ.");
       setIsSaving(false);
       return;
     }
+
+    // --- KONTROLA DUPLICIT ---
+    // Normalizace pro porovnání (XF-2 == XF2)
+    const normalize = (str) => str.replace(/[\s.-]/g, "").toUpperCase();
+
     const duplicate = existingPaints.find(
       (p) =>
         p.brand === finalBrand &&
-        p.code.toUpperCase() === finalCode &&
+        normalize(p.code) === normalize(finalCode) &&
         p.status === formData.status &&
         p.id !== editingId,
     );
+
     if (duplicate) {
-      setSubmitError("Tuto barvu už máte v seznamu.");
+      setSubmitError(
+        `Tuto barvu už máte v seznamu (uloženo jako: ${duplicate.code}).`,
+      );
       setIsSaving(false);
       return;
     }
@@ -565,6 +571,9 @@ const EditModal = ({
       brand: finalBrand,
       type: finalType,
       code: finalCode,
+      name: finalName,
+      thinner: finalThinner,
+      note: finalNote,
     });
 
     if (!success) {
