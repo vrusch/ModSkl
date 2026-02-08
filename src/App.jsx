@@ -32,6 +32,7 @@ import {
   FlaskConical,
   Database,
   FileJson,
+  WifiOff,
 } from "lucide-react";
 import { initializeApp } from "firebase/app";
 import {
@@ -55,7 +56,6 @@ import {
 // 🛠️ POMOCNÉ FUNKCE (UTILS)
 // ==============================================================================
 
-// Převede text na Title Case (Flat black -> Flat Black)
 const toTitleCase = (str) => {
   if (!str) return "";
   return str.replace(
@@ -64,22 +64,21 @@ const toTitleCase = (str) => {
   );
 };
 
-// Převede text na Sentence Case (Poznámka... -> Poznámka...)
 const toSentenceCase = (str) => {
   if (!str) return "";
   return str.charAt(0).toUpperCase() + str.slice(1);
 };
 
-// Normalizuje ID barvy pro porovnávání (odstraní mezery, tečky, velká písmena)
-// Příklad: "Tamiya XF-1" -> "TAMIYAXF1"
+// Normalizuje ID pro porovnávání (odstraní mezery, tečky, lomítka A POMLČKY)
 const normalizeId = (brand, code) => {
   if (!brand || !code) return "";
-  const cleanBrand = brand.toUpperCase().replace(/[\s\/.]/g, "");
-  const cleanCode = code.toUpperCase().replace(/[\s\/.]/g, "");
+  // Přidáno \- do regulárního výrazu, aby se odstraňovaly i pomlčky
+  const cleanBrand = brand.toUpperCase().replace(/[\s\/.\-]/g, "");
+  const cleanCode = code.toUpperCase().replace(/[\s\/.\-]/g, "");
   return `${cleanBrand}_${cleanCode}`;
 };
 
-// Bezpečné generování ID pro Firestore dokumenty (pro import katalogu)
+// Generuje bezpečné ID dokumentu pro Firestore (pro import katalogu)
 const generateSafeDocId = (brand, code) => {
   const safeBrand = brand.toUpperCase().replace(/[\s\/.]/g, "_");
   const safeCode = code.toUpperCase().replace(/[\s\/.]/g, "_");
@@ -87,69 +86,46 @@ const generateSafeDocId = (brand, code) => {
 };
 
 // ==============================================================================
-// 🔧 KONFIGURACE FIREBASE
+// 🔧 KONFIGURACE FIREBASE (UNIVERZÁLNÍ)
 // ==============================================================================
 
-// ⚠️ PŘEPÍNAČ KONFIGURACE PRO VERCEL ⚠️
-// Pro nasazení na Vercel prohoďte komentáře u VERZE A a VERZE B.
+// Funkce pro bezpečné získání proměnné prostředí (funguje pro Vite, Create-React-App i Vercel)
+const getEnv = (key) => {
+  // 1. Zkusíme Vite (import.meta.env)
+  try {
+    if (import.meta && import.meta.env && import.meta.env[key]) {
+      return import.meta.env[key];
+    }
+  } catch (e) {}
 
-// --- VERZE A: PRO VERCEL (Odkomentujte před deployem) ---
+  // 2. Zkusíme Node/Process (process.env)
+  try {
+    if (typeof process !== "undefined" && process.env && process.env[key]) {
+      return process.env[key];
+    }
+  } catch (e) {}
 
-const manualConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
+  return "";
 };
 
-// --- VERZE B: PRO LOKÁLNÍ VÝVOJ / EDITOR (Nechte aktivní zde) ---
-/*
-const manualConfig = {
-  apiKey:
-    typeof process !== "undefined" && process.env
-      ? process.env.VITE_FIREBASE_API_KEY
-      : "",
-  authDomain:
-    typeof process !== "undefined" && process.env
-      ? process.env.VITE_FIREBASE_AUTH_DOMAIN
-      : "",
-  projectId:
-    typeof process !== "undefined" && process.env
-      ? process.env.VITE_FIREBASE_PROJECT_ID
-      : "",
-  storageBucket:
-    typeof process !== "undefined" && process.env
-      ? process.env.VITE_FIREBASE_STORAGE_BUCKET
-      : "",
-  messagingSenderId:
-    typeof process !== "undefined" && process.env
-      ? process.env.VITE_FIREBASE_MESSAGING_SENDER_ID
-      : "",
-  appId:
-    typeof process !== "undefined" && process.env
-      ? process.env.VITE_FIREBASE_APP_ID
-      : "",
-  measurementId:
-    typeof process !== "undefined" && process.env
-      ? process.env.VITE_FIREBASE_MEASUREMENT_ID
-      : "",
+// Sestavení konfigurace
+const firebaseConfig = {
+  apiKey: getEnv("VITE_FIREBASE_API_KEY"),
+  authDomain: getEnv("VITE_FIREBASE_AUTH_DOMAIN"),
+  projectId: getEnv("VITE_FIREBASE_PROJECT_ID"),
+  storageBucket: getEnv("VITE_FIREBASE_STORAGE_BUCKET"),
+  messagingSenderId: getEnv("VITE_FIREBASE_MESSAGING_SENDER_ID"),
+  appId: getEnv("VITE_FIREBASE_APP_ID"),
+  measurementId: getEnv("VITE_FIREBASE_MEASUREMENT_ID"),
 };
-*/
-// --------------------------------------------------------
 
-let firebaseConfig;
-let currentAppId;
-
+// Pokud běžíme v Canvas prostředí, přepíšeme config globální proměnnou
 if (typeof __firebase_config !== "undefined") {
-  firebaseConfig = JSON.parse(__firebase_config);
-  currentAppId = typeof __app_id !== "undefined" ? __app_id : "default-app-id";
-} else {
-  firebaseConfig = manualConfig;
-  currentAppId = "modelarsky-sklad-v1";
+  Object.assign(firebaseConfig, JSON.parse(__firebase_config));
 }
+
+const currentAppId =
+  typeof __app_id !== "undefined" ? __app_id : "modelarsky-sklad-v1";
 
 // Inicializace
 let app, auth, db;
@@ -158,8 +134,9 @@ try {
     app = initializeApp(firebaseConfig);
     auth = getAuth(app);
     db = getFirestore(app);
+    console.log("Firebase initialized successfully.");
   } else {
-    console.warn("OFFLINE MODE: API Key nenalezen.");
+    console.warn("OFFLINE MODE: API Key nenalezen. Zkontrolujte .env soubor.");
   }
 } catch (error) {
   console.error("Firebase Init Error:", error);
@@ -281,6 +258,7 @@ const FilterBar = ({
   availableTypes,
   saveStatus,
   warehouseId,
+  isOffline,
 }) => (
   <div className="max-w-md mx-auto px-4 pb-4 space-y-3">
     <div className="flex gap-2">
@@ -328,6 +306,11 @@ const FilterBar = ({
         <Cloud size={10} /> ID Skladu:{" "}
         <span className="font-mono text-blue-400">{warehouseId}</span>
       </div>
+      {isOffline && (
+        <span className="text-xs text-red-400 flex items-center justify-end gap-1">
+          <WifiOff size={12} /> Offline režim
+        </span>
+      )}
       {saveStatus && (
         <span className="text-xs text-green-400 flex items-center justify-end gap-1 animate-pulse">
           <Save size={12} /> {saveStatus}
@@ -574,10 +557,10 @@ const EditModal = ({
 
     const currentBrand =
       formData.brand === "Jiná..." ? customBrand : formData.brand;
-    const searchBrandId = normalizeId(currentBrand, "X").split("_")[0]; // Získáme jen normalizovaný brand
+    const searchBrandId = normalizeId(currentBrand, "X").split("_")[0];
     const searchPaintId = normalizeId(currentBrand, cleanCode);
 
-    // 1. Hledání v CLOUD KATALOGU
+    // 1. CLOUD KATALOG
     let foundPaint = catalog.find(
       (item) => normalizeId(item.brand, item.code) === searchPaintId,
     );
@@ -587,9 +570,7 @@ const EditModal = ({
       const memoryMatch = existingPaints.find(
         (p) => normalizeId(p.brand, p.code) === searchPaintId,
       );
-      if (memoryMatch) {
-        foundPaint = { ...memoryMatch };
-      }
+      if (memoryMatch) foundPaint = { ...memoryMatch };
     }
 
     if (foundPaint) {
@@ -909,7 +890,7 @@ export default function App() {
     return onAuthStateChanged(auth, setUser);
   }, []);
 
-  // --- SYNC PAINTS & CATALOG ---
+  // --- SYNC ---
   useEffect(() => {
     if (!user || !db) return;
     setIsLoading(true);
@@ -1081,9 +1062,7 @@ export default function App() {
     }
   };
 
-  // Import/Export (User Data)
   const handleImport = async (e) => {
-    /* ... existing import logic ... */
     const file = e.target.files[0];
     if (!file || !db) return;
     setIsImporting(true);
@@ -1124,8 +1103,8 @@ export default function App() {
     };
     reader.readAsText(file);
   };
+
   const handleExportJson = () => {
-    /* ... existing export logic ... */
     const url = URL.createObjectURL(
       new Blob([JSON.stringify(paints, null, 2)], { type: "application/json" }),
     );
@@ -1135,7 +1114,6 @@ export default function App() {
     link.click();
   };
   const handleExportTxt = () => {
-    /* ... existing export logic ... */
     const txt = paints
       .filter((p) => p.status === "buy")
       .map((p) => `[ ] ${p.brand} ${p.code} - ${p.name}`)
