@@ -52,36 +52,35 @@ import {
 // 🔧 KONFIGURACE A KONSTANTY
 // ==============================================================================
 
-// --- FIREBASE CONFIG (Zachována logika pro Vercel i Canvas) ---
+// Funkce pro dynamické získání proměnných, která funguje na Vercelu i v Canvasu
+const getEnvVar = (key) => {
+  try {
+    // 1. Pokus: Vercel / Vite (použijeme trik s new Function, aby editor nehlásil syntax error)
+    // Toto se provede za běhu prohlížeče
+    const metaEnv = new Function(
+      "try { return import.meta.env; } catch(e) { return {}; }",
+    )();
+    if (metaEnv && metaEnv[key]) return metaEnv[key];
+  } catch (e) {}
+
+  try {
+    // 2. Pokus: Process env (pro Canvas / Node prostředí)
+    if (typeof process !== "undefined" && process.env && process.env[key]) {
+      return process.env[key];
+    }
+  } catch (e) {}
+
+  return "";
+};
+
 const manualConfig = {
-  apiKey:
-    typeof process !== "undefined" && process.env
-      ? process.env.VITE_FIREBASE_API_KEY
-      : "",
-  authDomain:
-    typeof process !== "undefined" && process.env
-      ? process.env.VITE_FIREBASE_AUTH_DOMAIN
-      : "",
-  projectId:
-    typeof process !== "undefined" && process.env
-      ? process.env.VITE_FIREBASE_PROJECT_ID
-      : "",
-  storageBucket:
-    typeof process !== "undefined" && process.env
-      ? process.env.VITE_FIREBASE_STORAGE_BUCKET
-      : "",
-  messagingSenderId:
-    typeof process !== "undefined" && process.env
-      ? process.env.VITE_FIREBASE_MESSAGING_SENDER_ID
-      : "",
-  appId:
-    typeof process !== "undefined" && process.env
-      ? process.env.VITE_FIREBASE_APP_ID
-      : "",
-  measurementId:
-    typeof process !== "undefined" && process.env
-      ? process.env.VITE_FIREBASE_MEASUREMENT_ID
-      : "",
+  apiKey: getEnvVar("VITE_FIREBASE_API_KEY"),
+  authDomain: getEnvVar("VITE_FIREBASE_AUTH_DOMAIN"),
+  projectId: getEnvVar("VITE_FIREBASE_PROJECT_ID"),
+  storageBucket: getEnvVar("VITE_FIREBASE_STORAGE_BUCKET"),
+  messagingSenderId: getEnvVar("VITE_FIREBASE_MESSAGING_SENDER_ID"),
+  appId: getEnvVar("VITE_FIREBASE_APP_ID"),
+  measurementId: getEnvVar("VITE_FIREBASE_MEASUREMENT_ID"),
 };
 
 let firebaseConfig;
@@ -103,8 +102,9 @@ try {
     auth = getAuth(app);
     db = getFirestore(app);
   } else {
+    // Tento výpis uvidíte v konzoli, pokud se config nepodaří načíst
     console.warn(
-      "DEBUG: API Key nenalezen. Zkontrolujte environment variables.",
+      "DEBUG: API Key nenalezen. Aplikace poběží v offline režimu (bez DB).",
     );
   }
 } catch (error) {
@@ -149,7 +149,7 @@ const COLOR_DB = {
 // 🧩 KOMPONENTY
 // ==============================================================================
 
-// 1. Položka seznamu (Optimalizovaná pomocí memo, aby se nepřekreslovala zbytečně)
+// 1. Položka seznamu
 const PaintItem = React.memo(
   ({ paint, activeTab, onEdit, onToggleStatus, onDelete }) => {
     return (
@@ -158,12 +158,10 @@ const PaintItem = React.memo(
           className="absolute left-0 top-0 bottom-0 w-1.5"
           style={{ backgroundColor: paint.hex }}
         />
-
         <div
           className="w-12 h-12 rounded-full shadow-inner border-2 border-slate-600 flex-shrink-0"
           style={{ backgroundColor: paint.hex }}
         />
-
         <div className="flex-1 min-w-0">
           <div className="flex justify-between items-start">
             <div>
@@ -205,27 +203,16 @@ const PaintItem = React.memo(
             </div>
           </div>
         </div>
-
         <div className="flex items-center gap-1.5">
           <button
             onClick={() => onEdit(paint)}
             className="p-2 text-slate-500 hover:text-blue-400 hover:bg-slate-700/50 rounded-lg transition-colors"
-            title="Upravit"
           >
             <Pencil size={18} />
           </button>
           <button
             onClick={() => onToggleStatus(paint.id, paint.status)}
-            title={
-              activeTab === "owned"
-                ? "Došlo - přidat do nákupního seznamu"
-                : "Koupeno - přidat do sbírky"
-            }
-            className={`p-2 rounded-lg border transition-colors ${
-              activeTab === "owned"
-                ? "bg-slate-700 border-slate-600 text-slate-300 hover:text-orange-400 hover:border-orange-500/50"
-                : "bg-green-900/20 border-green-500/30 text-green-400 hover:bg-green-900/40"
-            }`}
+            className={`p-2 rounded-lg border transition-colors ${activeTab === "owned" ? "bg-slate-700 border-slate-600 text-slate-300 hover:text-orange-400" : "bg-green-900/20 border-green-500/30 text-green-400 hover:bg-green-900/40"}`}
           >
             {activeTab === "owned" ? (
               <ShoppingCart size={20} />
@@ -236,7 +223,6 @@ const PaintItem = React.memo(
           <button
             onClick={() => onDelete(paint.id)}
             className="p-2 text-slate-600 hover:text-red-400 transition-colors"
-            title="Smazat"
           >
             <Trash2 size={20} />
           </button>
@@ -246,7 +232,7 @@ const PaintItem = React.memo(
   },
 );
 
-// 2. Filtry a Vyhledávání
+// 2. Filtry
 const FilterBar = ({
   searchTerm,
   setSearchTerm,
@@ -276,16 +262,11 @@ const FilterBar = ({
         </div>
         <button
           onClick={() => setShowFilters(!showFilters)}
-          className={`p-3 rounded-xl border transition-all ${
-            showFilters || activeTypeFilter !== "all"
-              ? "bg-blue-600 text-white border-blue-500"
-              : "bg-slate-900 text-slate-400 border-slate-700 hover:text-white"
-          }`}
+          className={`p-3 rounded-xl border transition-all ${showFilters || activeTypeFilter !== "all" ? "bg-blue-600 text-white border-blue-500" : "bg-slate-900 text-slate-400 border-slate-700 hover:text-white"}`}
         >
           <Filter size={20} />
         </button>
       </div>
-
       {showFilters && (
         <div className="flex flex-wrap gap-2 animate-in slide-in-from-top-2">
           <button
@@ -305,7 +286,6 @@ const FilterBar = ({
           ))}
         </div>
       )}
-
       <div className="flex justify-between items-center px-1">
         <div className="flex items-center gap-1 text-[10px] text-slate-500">
           <Cloud size={10} /> ID Skladu:{" "}
@@ -321,7 +301,7 @@ const FilterBar = ({
   );
 };
 
-// 3. Tab Bar (Mám doma / Koupit)
+// 3. Stats Bar
 const StatsBar = ({ activeTab, setActiveTab, ownedCount, buyCount }) => (
   <div className="max-w-md mx-auto px-4 pb-2">
     <div className="flex bg-slate-950 p-1 rounded-xl">
@@ -349,7 +329,7 @@ const StatsBar = ({ activeTab, setActiveTab, ownedCount, buyCount }) => (
   </div>
 );
 
-// 4. Modal Settings (Import/Export)
+// 4. Settings Modal
 const SettingsModal = ({
   onClose,
   warehouseId,
@@ -359,22 +339,19 @@ const SettingsModal = ({
   onImportData,
   isImporting,
 }) => {
-  // ODSTRANĚNO: if (!isOpen) return null; - toto bylo chybné, renderování řídí rodič
   const [tempId, setTempId] = useState(warehouseId);
   const fileInputRef = useRef(null);
-
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
       <div className="bg-slate-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl border border-slate-700 overflow-y-auto max-h-[90vh]">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-bold text-white flex items-center gap-2">
-            <CloudCog className="text-blue-400" /> Nastavení a Data
+            <CloudCog className="text-blue-400" /> Nastavení
           </h3>
           <button onClick={onClose} className="text-slate-400 hover:text-white">
             <X size={20} />
           </button>
         </div>
-
         <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700 mb-6">
           <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">
             Synchronizace
@@ -406,18 +383,13 @@ const SettingsModal = ({
             Uložit nové ID
           </button>
         </div>
-
         <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700 space-y-3">
-          <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">
-            Správa dat
-          </h4>
           <button
             onClick={onExportData}
             className="w-full flex items-center justify-between bg-slate-800 hover:bg-slate-700 text-slate-200 p-3 rounded-lg border border-slate-600 transition-colors text-sm"
           >
             <span className="flex items-center gap-2">
-              <Download size={16} className="text-green-400" /> Záloha všeho
-              (JSON)
+              <Download size={16} className="text-green-400" /> Záloha (JSON)
             </span>
           </button>
           <div className="relative">
@@ -439,7 +411,7 @@ const SettingsModal = ({
                 ) : (
                   <Upload size={16} className="text-orange-400" />
                 )}{" "}
-                {isImporting ? "Nahrávám..." : "Obnovit ze zálohy"}
+                {isImporting ? "Nahrávám..." : "Obnovit"}
               </span>
             </button>
           </div>
@@ -458,7 +430,7 @@ const SettingsModal = ({
   );
 };
 
-// 5. Edit/Add Modal - The Form
+// 5. Edit/Add Modal
 const EditModal = ({
   onClose,
   editingId,
@@ -466,19 +438,11 @@ const EditModal = ({
   activeTab,
   existingPaints,
 }) => {
-  // ODSTRANĚNO: if (!isOpen) return null; - toto bylo chybné, renderování řídí rodič
-
-  // Inicializace stavu - Pokud máme editingId, najdeme barvu, jinak default
-  // Používáme funkci v useState pro lazy initialization (zavolá se jen při prvním renderu této instance)
   const [formData, setFormData] = useState(() => {
     if (editingId) {
       const paint = existingPaints.find((p) => p.id === editingId);
-      if (paint) {
-        // Vrátíme nalezenou barvu
-        return { ...paint };
-      }
+      if (paint) return { ...paint };
     }
-    // Výchozí hodnoty pro novou barvu
     return {
       brand: "Tamiya",
       code: "",
@@ -492,23 +456,20 @@ const EditModal = ({
     };
   });
 
-  const [customBrand, setCustomBrand] = useState(() => {
-    if (
-      editingId &&
-      formData.brand &&
-      !STANDARD_BRANDS.includes(formData.brand)
-    )
-      return formData.brand;
-    return "";
-  });
+  const [customBrand, setCustomBrand] = useState(() =>
+    editingId && formData.brand && !STANDARD_BRANDS.includes(formData.brand)
+      ? formData.brand
+      : "",
+  );
+  const [customType, setCustomType] = useState(() =>
+    editingId && formData.type && !STANDARD_TYPES.includes(formData.type)
+      ? formData.type
+      : "",
+  );
+  const [autoDetectFound, setAutoDetectFound] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
 
-  const [customType, setCustomType] = useState(() => {
-    if (editingId && formData.type && !STANDARD_TYPES.includes(formData.type))
-      return formData.type;
-    return "";
-  });
-
-  // Korekce dropdownů pokud je custom hodnota
   useEffect(() => {
     if (editingId) {
       if (!STANDARD_BRANDS.includes(formData.brand))
@@ -516,28 +477,21 @@ const EditModal = ({
       if (!STANDARD_TYPES.includes(formData.type))
         setFormData((prev) => ({ ...prev, type: "Jiný..." }));
     }
-  }, []); // Jen při startu
+  }, []);
 
-  const [autoDetectFound, setAutoDetectFound] = useState(false);
-  const [submitError, setSubmitError] = useState("");
-
-  // Auto-detect logic
   useEffect(() => {
     const cleanCode = formData.code.replace(/[\s.-]/g, "");
     if (cleanCode.length === 0) {
       setAutoDetectFound(false);
       return;
     }
-
     const currentBrand =
       formData.brand === "Jiná..." ? customBrand : formData.brand;
     const brandForSearch = currentBrand.toUpperCase().replace(/[\s.-]/g, "");
     const foundPaint = COLOR_DB[`${brandForSearch}-${cleanCode}`];
-
     if (foundPaint) {
       setAutoDetectFound(true);
       if (!editingId) {
-        // Jen pokud nepřepisujeme existující barvu
         setFormData((prev) => ({
           ...prev,
           name: foundPaint.name,
@@ -554,8 +508,11 @@ const EditModal = ({
     }
   }, [formData.brand, customBrand, formData.code, editingId]);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setSubmitError("");
+    setIsSaving(true);
+
     const finalBrand =
       formData.brand === "Jiná..." ? customBrand : formData.brand;
     const finalType = formData.type === "Jiný..." ? customType : formData.type;
@@ -563,10 +520,9 @@ const EditModal = ({
 
     if (!finalBrand || !finalType) {
       setSubmitError("Vyplňte značku a typ.");
+      setIsSaving(false);
       return;
     }
-
-    // Check duplicates
     const duplicate = existingPaints.find(
       (p) =>
         p.brand === finalBrand &&
@@ -574,18 +530,27 @@ const EditModal = ({
         p.status === formData.status &&
         p.id !== editingId,
     );
-
     if (duplicate) {
       setSubmitError("Tuto barvu už máte v seznamu.");
+      setIsSaving(false);
       return;
     }
 
-    onSave({
+    // Volání onSave a čekání na výsledek
+    const success = await onSave({
       ...formData,
       brand: finalBrand,
       type: finalType,
       code: finalCode,
     });
+
+    if (!success) {
+      setSubmitError(
+        "Chyba: Nepodařilo se připojit k databázi. Zkontrolujte API klíč.",
+      );
+      setIsSaving(false);
+    }
+    // Pokud úspěch, modal se zavře díky logice v rodiči (App), který ho odrenderuje
   };
 
   return (
@@ -599,7 +564,6 @@ const EditModal = ({
             <X size={24} />
           </button>
         </div>
-
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="flex bg-slate-900 p-1 rounded-lg mb-4">
             <button
@@ -617,7 +581,6 @@ const EditModal = ({
               Chci koupit
             </button>
           </div>
-
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-1">
               <label className="block text-xs text-slate-400 mb-1">
@@ -652,7 +615,6 @@ const EditModal = ({
               </select>
             </div>
           </div>
-
           {formData.brand === "Jiná..." && (
             <input
               type="text"
@@ -671,7 +633,6 @@ const EditModal = ({
               placeholder="Typ..."
             />
           )}
-
           <div className="relative">
             <label className="block text-xs text-slate-400 mb-1">Kód</label>
             <input
@@ -694,7 +655,6 @@ const EditModal = ({
               />
             )}
           </div>
-
           <div>
             <label className="block text-xs text-slate-400 mb-1">Název</label>
             <input
@@ -706,7 +666,6 @@ const EditModal = ({
               }
             />
           </div>
-
           <div className="bg-slate-900/50 p-3 rounded-lg border border-slate-700 space-y-3">
             <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
               <FlaskConical size={12} /> Ředění
@@ -732,7 +691,6 @@ const EditModal = ({
               />
             </div>
           </div>
-
           <div>
             <label className="block text-xs text-slate-400 mb-1">
               Poznámka
@@ -745,7 +703,6 @@ const EditModal = ({
               }
             />
           </div>
-
           <div className="flex gap-3">
             <input
               type="color"
@@ -764,17 +721,23 @@ const EditModal = ({
               }
             />
           </div>
-
           {submitError && (
-            <div className="text-red-400 text-sm flex gap-2">
+            <div className="text-red-400 text-sm flex gap-2 items-center bg-red-900/20 p-2 rounded border border-red-500/50">
               <AlertTriangle size={16} /> {submitError}
             </div>
           )}
           <button
             type="submit"
-            className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl shadow-lg"
+            disabled={isSaving}
+            className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl shadow-lg flex items-center justify-center gap-2"
           >
-            {editingId ? "Uložit" : "Přidat"}
+            {isSaving ? (
+              <Loader2 className="animate-spin" />
+            ) : editingId ? (
+              "Uložit"
+            ) : (
+              "Přidat"
+            )}
           </button>
         </form>
       </div>
@@ -792,7 +755,6 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [isImporting, setIsImporting] = useState(false);
 
-  // State pro ID skladu
   const [warehouseId, setWarehouseId] = useState(() => {
     try {
       return (
@@ -804,7 +766,6 @@ export default function App() {
     }
   });
 
-  // UI State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -822,14 +783,9 @@ export default function App() {
     }
     const initAuth = async () => {
       try {
-        if (
-          typeof __initial_auth_token !== "undefined" &&
-          __initial_auth_token
-        ) {
+        if (typeof __initial_auth_token !== "undefined" && __initial_auth_token)
           await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
+        else await signInAnonymously(auth);
       } catch (err) {
         console.error("Auth err:", err);
       }
@@ -873,7 +829,6 @@ export default function App() {
     } catch (e) {}
   }, [warehouseId]);
 
-  // --- LOGIKA ---
   const availableFilterTypes = useMemo(() => {
     const uniqueTypes = new Set(STANDARD_TYPES);
     paints.forEach((p) => {
@@ -882,7 +837,6 @@ export default function App() {
     return Array.from(uniqueTypes).sort();
   }, [paints]);
 
-  // Memoized filter - CRUCIAL for performance
   const filteredPaints = useMemo(() => {
     const lowerTerm = searchTerm.toLowerCase();
     return paints.filter((paint) => {
@@ -893,7 +847,6 @@ export default function App() {
         paint.brand.toLowerCase().includes(lowerTerm) ||
         (paint.note && paint.note.toLowerCase().includes(lowerTerm)) ||
         (paint.thinner && paint.thinner.toLowerCase().includes(lowerTerm));
-
       const matchesTab = paint.status === activeTab;
       const matchesType =
         activeTypeFilter === "all" || paint.type === activeTypeFilter;
@@ -901,33 +854,29 @@ export default function App() {
     });
   }, [paints, searchTerm, activeTab, activeTypeFilter]);
 
-  // --- HANDLERS (Memoized pro PaintItem) ---
   const handleEditStart = useCallback((paint) => {
     setEditingId(paint.id);
     setIsModalOpen(true);
   }, []);
-
   const handleDelete = useCallback(async (id) => {
-    if (confirm("Smazat barvu?")) {
+    if (db && confirm("Smazat barvu?"))
       await deleteDoc(
         doc(db, "artifacts", currentAppId, "public", "data", "paints", id),
       );
-    }
   }, []);
-
   const handleToggleStatus = useCallback(async (id, currentStatus) => {
-    await updateDoc(
-      doc(db, "artifacts", currentAppId, "public", "data", "paints", id),
-      {
-        status: currentStatus === "owned" ? "buy" : "owned",
-      },
-    );
+    if (db)
+      await updateDoc(
+        doc(db, "artifacts", currentAppId, "public", "data", "paints", id),
+        { status: currentStatus === "owned" ? "buy" : "owned" },
+      );
   }, []);
 
   const handleSavePaint = async (paintData) => {
+    if (!db) return false; // Návratová hodnota pro modal
     setSaveStatus("ukládám...");
     try {
-      if (editingId) {
+      if (editingId)
         await updateDoc(
           doc(
             db,
@@ -940,29 +889,26 @@ export default function App() {
           ),
           paintData,
         );
-      } else {
+      else
         await addDoc(
           collection(db, "artifacts", currentAppId, "public", "data", "paints"),
-          {
-            ...paintData,
-            warehouseId,
-            createdAt: Date.now(),
-          },
+          { ...paintData, warehouseId, createdAt: Date.now() },
         );
-      }
       setIsModalOpen(false);
       setEditingId(null);
       setSaveStatus("uloženo");
       if (activeTab !== paintData.status) setActiveTab(paintData.status);
       setTimeout(() => setSaveStatus(""), 2000);
+      return true; // Úspěch
     } catch (e) {
       setSaveStatus("chyba");
+      return false; // Chyba
     }
   };
 
   const handleImport = async (e) => {
     const file = e.target.files[0];
-    if (!file) return;
+    if (!file || !db) return;
     setIsImporting(true);
     const reader = new FileReader();
     reader.onload = async (ev) => {
@@ -1002,7 +948,6 @@ export default function App() {
     reader.readAsText(file);
   };
 
-  // Export handlers logic remains same...
   const handleExportJson = () => {
     const url = URL.createObjectURL(
       new Blob([JSON.stringify(paints, null, 2)], { type: "application/json" }),
@@ -1024,7 +969,6 @@ export default function App() {
     link.click();
   };
 
-  // --- RENDER ---
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 font-sans pb-20">
       <div className="bg-slate-800 border-b border-slate-700 sticky top-0 z-10 shadow-md">
@@ -1056,7 +1000,6 @@ export default function App() {
             </button>
           </div>
         </div>
-
         <FilterBar
           searchTerm={searchTerm}
           setSearchTerm={setSearchTerm}
@@ -1068,7 +1011,6 @@ export default function App() {
           saveStatus={saveStatus}
           warehouseId={warehouseId}
         />
-
         <StatsBar
           activeTab={activeTab}
           setActiveTab={setActiveTab}
@@ -1076,7 +1018,6 @@ export default function App() {
           buyCount={paints.filter((p) => p.status === "buy").length}
         />
       </div>
-
       <div className="max-w-md mx-auto px-4 py-4 space-y-3">
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-12 text-slate-500 gap-2">
@@ -1101,7 +1042,6 @@ export default function App() {
           ))
         )}
       </div>
-
       {isSettingsOpen && (
         <SettingsModal
           onClose={() => setIsSettingsOpen(false)}
@@ -1113,7 +1053,6 @@ export default function App() {
           isImporting={isImporting}
         />
       )}
-
       {isModalOpen && (
         <EditModal
           onClose={() => setIsModalOpen(false)}
