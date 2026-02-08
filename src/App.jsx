@@ -46,58 +46,68 @@ import {
 // 🔧 KONFIGURACE FIREBASE
 // ==============================================================================
 
+// ⚠️ INSTRUKCE PRO VERCEL DEPLOY ⚠️
+// Tento editor (Canvas) neumí syntaxi 'import.meta.env', kterou Vercel vyžaduje.
+// Proto je níže uvedena konfigurace ve dvou verzích.
+
+// --- VERZE A: PRO VERCEL / VITE (Moderní) ---
+// Před nahráním na Vercel ODKOMENTUJTE (smažte /* a */) tento blok:
+
 const manualConfig = {
-  apiKey:
-    typeof process !== "undefined" && process.env
-      ? process.env.VITE_FIREBASE_API_KEY
-      : "",
-  authDomain:
-    typeof process !== "undefined" && process.env
-      ? process.env.VITE_FIREBASE_AUTH_DOMAIN
-      : "",
-  projectId:
-    typeof process !== "undefined" && process.env
-      ? process.env.VITE_FIREBASE_PROJECT_ID
-      : "",
-  storageBucket:
-    typeof process !== "undefined" && process.env
-      ? process.env.VITE_FIREBASE_STORAGE_BUCKET
-      : "",
-  messagingSenderId:
-    typeof process !== "undefined" && process.env
-      ? process.env.VITE_FIREBASE_MESSAGING_SENDER_ID
-      : "",
-  appId:
-    typeof process !== "undefined" && process.env
-      ? process.env.VITE_FIREBASE_APP_ID
-      : "",
-  measurementId:
-    typeof process !== "undefined" && process.env
-      ? process.env.VITE_FIREBASE_MEASUREMENT_ID
-      : "",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
+
+// --- VERZE B: PRO CANVAS / MÍSTNÍ NÁHLED (Záložní) ---
+// Tento blok nechte aktivní pro náhled zde.
+// Pokud použijete Verzi A, tuto Verzi B zakomentujte nebo smažte.
+/*
+const manualConfig = {
+  apiKey: (typeof process !== 'undefined' && process.env) ? process.env.VITE_FIREBASE_API_KEY : "",
+  authDomain: (typeof process !== 'undefined' && process.env) ? process.env.VITE_FIREBASE_AUTH_DOMAIN : "",
+  projectId: (typeof process !== 'undefined' && process.env) ? process.env.VITE_FIREBASE_PROJECT_ID : "",
+  storageBucket: (typeof process !== 'undefined' && process.env) ? process.env.VITE_FIREBASE_STORAGE_BUCKET : "",
+  messagingSenderId: (typeof process !== 'undefined' && process.env) ? process.env.VITE_FIREBASE_MESSAGING_SENDER_ID : "",
+  appId: (typeof process !== 'undefined' && process.env) ? process.env.VITE_FIREBASE_APP_ID : "",
+  measurementId: (typeof process !== 'undefined' && process.env) ? process.env.VITE_FIREBASE_MEASUREMENT_ID : ""
+};
+*/
+// ------------------------------------------------------------------------------
 
 let firebaseConfig;
 let currentAppId;
 
+// Zjištění, zda běžíme v prostředí Canvas (zde) nebo jinde (Vercel/Local)
 if (typeof __firebase_config !== "undefined") {
+  // Jsme v Canvas prostředí - použijeme systémové proměnné
   firebaseConfig = JSON.parse(__firebase_config);
   currentAppId = typeof __app_id !== "undefined" ? __app_id : "default-app-id";
 } else {
+  // Jsme na Vercelu nebo localhostu - použijeme manuální konfiguraci
+  // Zde se použije buď Verze A (import.meta) nebo Verze B (process.env) podle toho, co je aktivní
   firebaseConfig = manualConfig;
   currentAppId = "modelarsky-sklad-v1";
 }
 
+// Inicializace Firebase
 let app, auth, db;
 try {
+  // Debugovací výpis pro kontrolu
+  if (!firebaseConfig.apiKey) {
+    console.warn(
+      "DEBUG: API Key nenalezen. Zkontrolujte, zda jste pro Vercel odkomentovali VERZI A.",
+    );
+  }
+
   if (firebaseConfig.apiKey) {
     app = initializeApp(firebaseConfig);
     auth = getAuth(app);
     db = getFirestore(app);
-  } else {
-    console.warn(
-      "Chybí Firebase API Key! Ujistěte se, že máte soubor .env nebo nastavené Environment Variables na Vercelu.",
-    );
   }
 } catch (error) {
   console.error("Chyba inicializace Firebase:", error);
@@ -190,14 +200,16 @@ export default function App() {
     status: "owned",
     hex: "#808080",
     note: "",
-    thinner: "", // Nové pole
-    ratio: "", // Nové pole
+    thinner: "",
+    ratio: "",
   });
 
   // --- FIREBASE AUTH ---
   useEffect(() => {
     if (!auth) {
       setIsLoading(false);
+      // Pokud chybí auth, znamená to, že se nenačetla konfigurace
+      setSaveStatus("Chybí Config");
       return;
     }
 
@@ -337,7 +349,7 @@ export default function App() {
         paint.code.toLowerCase().includes(lowerTerm) ||
         paint.brand.toLowerCase().includes(lowerTerm) ||
         (paint.note && paint.note.toLowerCase().includes(lowerTerm)) ||
-        (paint.thinner && paint.thinner.toLowerCase().includes(lowerTerm)); // Hledání i v ředidle
+        (paint.thinner && paint.thinner.toLowerCase().includes(lowerTerm));
 
       const matchesTab = paint.status === activeTab;
       const matchesType =
@@ -501,7 +513,9 @@ export default function App() {
   const handleSavePaint = async (e) => {
     e.preventDefault();
     if (!user || !db) {
-      setSubmitError("Chyba: Nejste připojeni k databázi.");
+      setSubmitError(
+        "Chyba: Nejste připojeni k databázi. Zkuste obnovit stránku.",
+      );
       return;
     }
     setSubmitError("");
@@ -823,7 +837,7 @@ export default function App() {
                     {/* Zobrazení ředění v seznamu */}
                     {(paint.thinner || paint.ratio) && (
                       <div className="mt-2 text-[11px] text-slate-400 bg-slate-900/50 p-2 rounded border border-slate-700/50 flex items-start gap-2">
-                        <Droplets
+                        <FlaskConical
                           size={14}
                           className="mt-0.5 text-blue-400 shrink-0"
                         />
@@ -1184,7 +1198,7 @@ export default function App() {
               {/* Sekce Ředění */}
               <div className="bg-slate-900/50 p-3 rounded-lg border border-slate-700 space-y-3">
                 <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
-                  <Droplets size={12} /> Ředění (volitelné)
+                  <FlaskConical size={12} /> Ředění (volitelné)
                 </h3>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="col-span-1">
