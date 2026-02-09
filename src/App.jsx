@@ -50,6 +50,7 @@ import {
   doc,
   onSnapshot,
   writeBatch,
+  setDoc,
 } from "firebase/firestore";
 
 // ==============================================================================
@@ -72,7 +73,6 @@ const toSentenceCase = (str) => {
 // Normalizuje ID pro porovnávání (odstraní mezery, tečky, lomítka A POMLČKY)
 const normalizeId = (brand, code) => {
   if (!brand || !code) return "";
-  // Přidáno \- do regulárního výrazu, aby se odstraňovaly i pomlčky
   const cleanBrand = brand.toUpperCase().replace(/[\s\/.\-]/g, "");
   const cleanCode = code.toUpperCase().replace(/[\s\/.\-]/g, "");
   return `${cleanBrand}_${cleanCode}`;
@@ -89,26 +89,18 @@ const generateSafeDocId = (brand, code) => {
 // 🔧 KONFIGURACE FIREBASE (UNIVERZÁLNÍ)
 // ==============================================================================
 
-// Funkce pro bezpečné získání proměnné prostředí (funguje pro Vite, Create-React-App i Vercel)
 const getEnv = (key) => {
-  // 1. Zkusíme Vite (import.meta.env)
   try {
-    if (import.meta && import.meta.env && import.meta.env[key]) {
+    if (import.meta && import.meta.env && import.meta.env[key])
       return import.meta.env[key];
-    }
   } catch (e) {}
-
-  // 2. Zkusíme Node/Process (process.env)
   try {
-    if (typeof process !== "undefined" && process.env && process.env[key]) {
+    if (typeof process !== "undefined" && process.env && process.env[key])
       return process.env[key];
-    }
   } catch (e) {}
-
   return "";
 };
 
-// Sestavení konfigurace
 const firebaseConfig = {
   apiKey: getEnv("VITE_FIREBASE_API_KEY"),
   authDomain: getEnv("VITE_FIREBASE_AUTH_DOMAIN"),
@@ -119,7 +111,6 @@ const firebaseConfig = {
   measurementId: getEnv("VITE_FIREBASE_MEASUREMENT_ID"),
 };
 
-// Pokud běžíme v Canvas prostředí, přepíšeme config globální proměnnou
 if (typeof __firebase_config !== "undefined") {
   Object.assign(firebaseConfig, JSON.parse(__firebase_config));
 }
@@ -127,7 +118,6 @@ if (typeof __firebase_config !== "undefined") {
 const currentAppId =
   typeof __app_id !== "undefined" ? __app_id : "modelarsky-sklad-v1";
 
-// Inicializace
 let app, auth, db;
 try {
   if (firebaseConfig.apiKey) {
@@ -136,13 +126,12 @@ try {
     db = getFirestore(app);
     console.log("Firebase initialized successfully.");
   } else {
-    console.warn("OFFLINE MODE: API Key nenalezen. Zkontrolujte .env soubor.");
+    console.warn("OFFLINE MODE: API Key nenalezen.");
   }
 } catch (error) {
   console.error("Firebase Init Error:", error);
 }
 
-// Konstanty pro UI
 const STANDARD_BRANDS = [
   "AK Interactive",
   "Ammo Mig",
@@ -374,7 +363,6 @@ const SettingsModal = ({
           </button>
         </div>
 
-        {/* ID Skladu */}
         <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700 mb-6">
           <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">
             Synchronizace
@@ -407,7 +395,6 @@ const SettingsModal = ({
           </button>
         </div>
 
-        {/* CLOUD KATALOG */}
         <div className="bg-indigo-900/30 p-4 rounded-xl border border-indigo-500/30 mb-6">
           <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-3 flex items-center gap-2">
             <Database size={12} /> Cloud Katalog
@@ -447,7 +434,6 @@ const SettingsModal = ({
           </p>
         </div>
 
-        {/* DATA */}
         <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700 space-y-3">
           <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
             Moje Data
@@ -547,7 +533,6 @@ const EditModal = ({
     }
   }, []);
 
-  // --- INTELIGENTNÍ NAŠEPTÁVAČ ---
   useEffect(() => {
     const cleanCode = formData.code.replace(/[\s.-]/g, "");
     if (cleanCode.length === 0) {
@@ -557,15 +542,11 @@ const EditModal = ({
 
     const currentBrand =
       formData.brand === "Jiná..." ? customBrand : formData.brand;
-    const searchBrandId = normalizeId(currentBrand, "X").split("_")[0];
     const searchPaintId = normalizeId(currentBrand, cleanCode);
 
-    // 1. CLOUD KATALOG
     let foundPaint = catalog.find(
       (item) => normalizeId(item.brand, item.code) === searchPaintId,
     );
-
-    // 2. OSOBNÍ PAMĚŤ
     if (!foundPaint) {
       const memoryMatch = existingPaints.find(
         (p) => normalizeId(p.brand, p.code) === searchPaintId,
@@ -871,7 +852,6 @@ export default function App() {
   const [activeTypeFilter, setActiveTypeFilter] = useState("all");
   const [saveStatus, setSaveStatus] = useState("");
 
-  // --- AUTH ---
   useEffect(() => {
     if (!auth) {
       setIsLoading(false);
@@ -890,7 +870,6 @@ export default function App() {
     return onAuthStateChanged(auth, setUser);
   }, []);
 
-  // --- SYNC ---
   useEffect(() => {
     if (!user || !db) return;
     setIsLoading(true);
@@ -933,7 +912,6 @@ export default function App() {
     } catch (e) {}
   }, [warehouseId]);
 
-  // --- HANDLERS ---
   const handleImportCatalog = async (e) => {
     const file = e.target.files[0];
     if (
@@ -1050,6 +1028,39 @@ export default function App() {
           collection(db, "artifacts", currentAppId, "public", "data", "paints"),
           { ...paintData, warehouseId, createdAt: Date.now() },
         );
+
+      // --- CROWDSOURCING LOGIKA ---
+      const catalogId = generateSafeDocId(paintData.brand, paintData.code);
+      const existsInCatalog = catalog.some(
+        (item) =>
+          normalizeId(item.brand, item.code) ===
+          normalizeId(paintData.brand, paintData.code),
+      );
+
+      if (!existsInCatalog) {
+        const catalogItem = {
+          brand: paintData.brand,
+          code: paintData.code,
+          name: paintData.name,
+          type: paintData.type,
+          hex: paintData.hex,
+        };
+        await setDoc(
+          doc(
+            db,
+            "artifacts",
+            currentAppId,
+            "public",
+            "data",
+            "catalog",
+            catalogId,
+          ),
+          catalogItem,
+          { merge: true },
+        );
+      }
+      // -----------------------------
+
       setIsModalOpen(false);
       setEditingId(null);
       setSaveStatus("uloženo");
@@ -1166,6 +1177,7 @@ export default function App() {
           availableTypes={availableFilterTypes}
           saveStatus={saveStatus}
           warehouseId={warehouseId}
+          isOffline={!db}
         />
         <StatsBar
           activeTab={activeTab}
