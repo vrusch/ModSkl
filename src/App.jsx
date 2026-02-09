@@ -33,6 +33,12 @@ import {
   Database,
   FileJson,
   WifiOff,
+  Bot,
+  Camera,
+  Sparkles,
+  MessageSquare,
+  ImagePlus,
+  Send,
 } from "lucide-react";
 import { initializeApp } from "firebase/app";
 import {
@@ -53,6 +59,85 @@ import {
   setDoc,
 } from "firebase/firestore";
 
+// ==========================================
+// 🔧 NASTAVENÍ APLIKACE
+// ==========================================
+
+// ZDE MĚŇTE ČÍSLO VERZE
+const APP_VERSION = "v1.5.0";
+
+// ==============================================================================
+// 🤖 AI & GEMINI CONFIGURATION
+// ==============================================================================
+
+const apiKey = ""; // API Key is injected by the environment at runtime
+
+async function callGeminiVision(imageBase64) {
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: 'Jsi expert na modelářské barvy. Analyzuj tento obrázek lahvičky barvy. Identifikuj Značku (Brand), Kód (Code), Název (Name), Typ (Type - Akryl/Lacquer/Email) a odhadni Hex barvu. Odpověz POUZE validním JSON objektem: { "brand": string, "code": string, "name": string, "type": string, "hex": string }. Pokud nic nenajdeš, vrať null.',
+                },
+                { inlineData: { mimeType: "image/jpeg", data: imageBase64 } },
+              ],
+            },
+          ],
+        }),
+      },
+    );
+    const data = await response.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) throw new Error("AI nic nevidí.");
+    const jsonStr = text.replace(/```json|```/g, "").trim();
+    return JSON.parse(jsonStr);
+  } catch (error) {
+    console.error("Gemini Vision Error:", error);
+    return null;
+  }
+}
+
+async function callGeminiChat(prompt, inventoryContext) {
+  try {
+    const systemPrompt = `Jsi zkušený modelářský asistent. Pomáháš uživateli s barvami, ředěním a převodníky.
+    ZDE JE UŽIVATELŮV AKTUÁLNÍ SKLAD BAREV (použij to pro kontrolu, zda už barvu má):
+    ${JSON.stringify(inventoryContext)}
+    
+    PRAVIDLA:
+    1. Buď stručný a užitečný.
+    2. Pokud se uživatel ptá na alternativu/převod, podívej se NEJDŘÍV do jeho skladu, jestli už ji nemá.
+    3. Pokud ji má, napiš: "Máš doma [Značka Kód]". Pokud ne, doporuč co koupit.
+    4. Odpovídej česky.`;
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+        }),
+      },
+    );
+    const data = await response.json();
+    return (
+      data.candidates?.[0]?.content?.parts?.[0]?.text ||
+      "Omlouvám se, došlo k chybě spojení s AI."
+    );
+  } catch (error) {
+    console.error("Gemini Chat Error:", error);
+    return "Chyba komunikace s AI serverem.";
+  }
+}
+
 // ==============================================================================
 // 🛠️ POMOCNÉ FUNKCE (UTILS)
 // ==============================================================================
@@ -70,7 +155,6 @@ const toSentenceCase = (str) => {
   return str.charAt(0).toUpperCase() + str.slice(1);
 };
 
-// Normalizuje ID pro porovnávání (odstraní mezery, tečky, lomítka A POMLČKY)
 const normalizeId = (brand, code) => {
   if (!brand || !code) return "";
   const cleanBrand = brand.toUpperCase().replace(/[\s\/.\-]/g, "");
@@ -78,7 +162,6 @@ const normalizeId = (brand, code) => {
   return `${cleanBrand}_${cleanCode}`;
 };
 
-// Generuje bezpečné ID dokumentu pro Firestore (pro import katalogu)
 const generateSafeDocId = (brand, code) => {
   const safeBrand = brand.toUpperCase().replace(/[\s\/.]/g, "_");
   const safeCode = code.toUpperCase().replace(/[\s\/.]/g, "_");
@@ -86,7 +169,7 @@ const generateSafeDocId = (brand, code) => {
 };
 
 // ==============================================================================
-// 🔧 KONFIGURACE FIREBASE (UNIVERZÁLNÍ)
+// 🔧 KONFIGURACE FIREBASE
 // ==============================================================================
 
 const getEnv = (key) => {
@@ -124,7 +207,6 @@ try {
     app = initializeApp(firebaseConfig);
     auth = getAuth(app);
     db = getFirestore(app);
-    console.log("Firebase initialized successfully.");
   } else {
     console.warn("OFFLINE MODE: API Key nenalezen.");
   }
@@ -154,7 +236,7 @@ const STANDARD_TYPES = [
 ];
 
 // ==============================================================================
-// 🧩 KOMPONENTY (Sub-components)
+// 🧩 KOMPONENTY
 // ==============================================================================
 
 const PaintItem = React.memo(
@@ -292,12 +374,12 @@ const FilterBar = ({
     )}
     <div className="flex justify-between items-center px-1">
       <div className="flex items-center gap-1 text-[10px] text-slate-500">
-        <Cloud size={10} /> ID Skladu:{" "}
+        <Cloud size={10} /> ID:{" "}
         <span className="font-mono text-blue-400">{warehouseId}</span>
       </div>
       {isOffline && (
         <span className="text-xs text-red-400 flex items-center justify-end gap-1">
-          <WifiOff size={12} /> Offline režim
+          <WifiOff size={12} /> Offline
         </span>
       )}
       {saveStatus && (
@@ -484,15 +566,658 @@ const SettingsModal = ({
   );
 };
 
-const EditModal = ({
+// --- AI ASSISTANT MODAL ---
+const AiAssistantModal = ({ onClose, paints, onPaintDetected }) => {
+  const [activeTab, setActiveTab] = useState("chat"); // 'chat' | 'vision'
+  const [messages, setMessages] = useState([
+    {
+      role: "ai",
+      text: "Ahoj! Jsem tvůj modelářský asistent. S čím pomůžu? (Mám přehled o tvém skladu).",
+    },
+  ]);
+  const [inputValue, setInputValue] = useState("");
+  const [isProcessing, setIsProcessing] = useState(false);
+  const fileInputRef = useRef(null);
+
+  // Zjednodušený inventář pro AI (šetří tokeny)
+  const inventoryContext = useMemo(() => {
+    return paints
+      .filter((p) => p.status === "owned")
+      .map((p) => `${p.brand} ${p.code} (${p.name})`);
+  }, [paints]);
+
+  const handleSendMessage = async () => {
+    if (!inputValue.trim()) return;
+    const userMsg = inputValue;
+    setMessages((prev) => [...prev, { role: "user", text: userMsg }]);
+    setInputValue("");
+    setIsProcessing(true);
+
+    const aiResponse = await callGeminiChat(userMsg, inventoryContext);
+    setMessages((prev) => [...prev, { role: "ai", text: aiResponse }]);
+    setIsProcessing(false);
+  };
+
+  const handleImageUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setIsProcessing(true);
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      const base64data = reader.result.split(",")[1];
+      const result = await callGeminiVision(base64data);
+
+      setIsProcessing(false);
+      if (result) {
+        onPaintDetected(result); // Callback pro otevření EditModalu s daty
+      } else {
+        alert(
+          "Nepodařilo se rozpoznat barvu z obrázku. Zkuste to prosím znovu.",
+        );
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+      <div className="bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl border border-slate-700 flex flex-col h-[80vh]">
+        {/* Header */}
+        <div className="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800 rounded-t-2xl">
+          <h3 className="text-lg font-bold text-white flex items-center gap-2">
+            <Sparkles className="text-purple-400" size={20} /> AI Asistent
+          </h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-white">
+            <X size={24} />
+          </button>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex border-b border-slate-700">
+          <button
+            onClick={() => setActiveTab("chat")}
+            className={`flex-1 p-3 text-sm font-medium flex items-center justify-center gap-2 ${activeTab === "chat" ? "text-purple-400 border-b-2 border-purple-400 bg-slate-800/50" : "text-slate-500 hover:text-slate-300"}`}
+          >
+            <MessageSquare size={18} /> Rádce
+          </button>
+          <button
+            onClick={() => setActiveTab("vision")}
+            className={`flex-1 p-3 text-sm font-medium flex items-center justify-center gap-2 ${activeTab === "vision" ? "text-blue-400 border-b-2 border-blue-400 bg-slate-800/50" : "text-slate-500 hover:text-slate-300"}`}
+          >
+            <Camera size={18} /> Vyfoť a přidej
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {activeTab === "chat" ? (
+            <div className="space-y-4">
+              {messages.map((msg, idx) => (
+                <div
+                  key={idx}
+                  className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                >
+                  <div
+                    className={`max-w-[85%] rounded-2xl p-3 text-sm ${msg.role === "user" ? "bg-purple-600 text-white rounded-tr-none" : "bg-slate-800 text-slate-200 rounded-tl-none border border-slate-700"}`}
+                  >
+                    {msg.text}
+                  </div>
+                </div>
+              ))}
+              {isProcessing && (
+                <div className="flex justify-start">
+                  <div className="bg-slate-800 rounded-2xl p-3 text-slate-400 text-sm flex gap-2 items-center">
+                    <Loader2 className="animate-spin" size={14} /> Přemýšlím...
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full text-center space-y-6">
+              <div className="bg-blue-500/10 p-6 rounded-full border-2 border-blue-500/30">
+                <ImagePlus size={48} className="text-blue-400" />
+              </div>
+              <div>
+                <h4 className="text-lg font-bold text-white mb-2">
+                  Rozpoznání barvy
+                </h4>
+                <p className="text-slate-400 text-sm max-w-xs mx-auto">
+                  Vyfoťte lahvičku barvy. AI zkusí přečíst štítek a automaticky
+                  vyplnit formulář pro přidání.
+                </p>
+              </div>
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                ref={fileInputRef}
+                onChange={handleImageUpload}
+                className="hidden"
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isProcessing}
+                className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-8 rounded-xl shadow-lg flex items-center gap-2"
+              >
+                {isProcessing ? (
+                  <Loader2 className="animate-spin" />
+                ) : (
+                  <Camera />
+                )}
+                {isProcessing ? "Analyzuji..." : "Vyfotit / Nahrát"}
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Footer (Input for chat) */}
+        {activeTab === "chat" && (
+          <div className="p-4 border-t border-slate-700 bg-slate-800 rounded-b-2xl">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
+                placeholder="Zeptej se na cokoliv..."
+                className="flex-1 bg-slate-900 border border-slate-600 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-purple-500"
+              />
+              <button
+                onClick={handleSendMessage}
+                disabled={isProcessing}
+                className="bg-purple-600 hover:bg-purple-500 text-white p-2.5 rounded-xl"
+              >
+                <Send size={20} />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ==============================================================================
+// 🚀 HLAVNÍ APLIKACE (Update)
+// ==============================================================================
+
+export default function App() {
+  const [user, setUser] = useState(null);
+  const [paints, setPaints] = useState([]);
+  const [catalog, setCatalog] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isImporting, setIsImporting] = useState(false);
+
+  const [warehouseId, setWarehouseId] = useState(() => {
+    try {
+      return (
+        localStorage.getItem("modelarsky_warehouse_id") ||
+        Math.random().toString(36).substring(2, 7).toUpperCase()
+      );
+    } catch {
+      return "DEMO";
+    }
+  });
+
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isAiOpen, setIsAiOpen] = useState(false); // New AI Modal State
+  const [editingId, setEditingId] = useState(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [activeTab, setActiveTab] = useState("owned");
+  const [showFilters, setShowFilters] = useState(false);
+  const [activeTypeFilter, setActiveTypeFilter] = useState("all");
+  const [saveStatus, setSaveStatus] = useState("");
+
+  // AI Callback - when paint is detected from image
+  const handleAiPaintDetected = (paintData) => {
+    setIsAiOpen(false); // Close AI
+    setEditingId(null); // New paint mode
+    setIsModalOpen(true); // Open Edit Modal
+
+    // We need to pass this data to the EditModal somehow.
+    // Since EditModal uses local state initialized from props, we can handle this by
+    // setting a temporary "prefill" state or just modifying how EditModal initializes.
+    // For simplicity, I'll update the EditModal to accept `initialData`.
+    setTempAiData(paintData);
+  };
+  const [tempAiData, setTempAiData] = useState(null);
+
+  // --- AUTH & SYNC (Existing logic) ---
+  useEffect(() => {
+    if (!auth) {
+      setIsLoading(false);
+      return;
+    }
+    const initAuth = async () => {
+      try {
+        if (typeof __initial_auth_token !== "undefined" && __initial_auth_token)
+          await signInWithCustomToken(auth, __initial_auth_token);
+        else await signInAnonymously(auth);
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    initAuth();
+    return onAuthStateChanged(auth, setUser);
+  }, []);
+
+  useEffect(() => {
+    if (!user || !db) return;
+    setIsLoading(true);
+    try {
+      const unsubPaints = onSnapshot(
+        collection(db, "artifacts", currentAppId, "public", "data", "paints"),
+        (snapshot) => {
+          const allPaints = snapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          }));
+          setPaints(
+            allPaints
+              .filter((p) => p.warehouseId === warehouseId)
+              .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)),
+          );
+          setIsLoading(false);
+        },
+      );
+      const unsubCatalog = onSnapshot(
+        collection(db, "artifacts", currentAppId, "public", "data", "catalog"),
+        (snapshot) => {
+          setCatalog(snapshot.docs.map((doc) => doc.data()));
+        },
+      );
+      return () => {
+        unsubPaints();
+        unsubCatalog();
+      };
+    } catch (err) {
+      setIsLoading(false);
+    }
+  }, [user, warehouseId]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("modelarsky_warehouse_id", warehouseId);
+    } catch (e) {}
+  }, [warehouseId]);
+
+  // --- EXISTING HANDLERS ---
+  const handleImportCatalog = async (e) => {
+    const file = e.target.files[0];
+    if (
+      !file ||
+      !db ||
+      !confirm("Pozor: Toto nahraje data do globálního katalogu. Pokračovat?")
+    )
+      return;
+
+    setIsLoading(true);
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if (!Array.isArray(data)) throw new Error("Soubor musí být JSON pole.");
+
+        const chunkSize = 450;
+        const catalogRef = collection(
+          db,
+          "artifacts",
+          currentAppId,
+          "public",
+          "data",
+          "catalog",
+        );
+        let totalProcessed = 0;
+
+        for (let i = 0; i < data.length; i += chunkSize) {
+          const chunk = data.slice(i, i + chunkSize);
+          const batch = writeBatch(db);
+          chunk.forEach((item) => {
+            if (item.brand && item.code) {
+              const docId = generateSafeDocId(item.brand, item.code);
+              batch.set(doc(catalogRef, docId), item, { merge: true });
+              totalProcessed++;
+            }
+          });
+          await batch.commit();
+        }
+        alert(`Katalog aktualizován! (${totalProcessed} pol.)`);
+        setIsSettingsOpen(false);
+      } catch (err) {
+        alert("Chyba: " + err.message);
+      } finally {
+        setIsLoading(false);
+        e.target.value = "";
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleSavePaint = async (paintData) => {
+    if (!db) return false;
+    setSaveStatus("ukládám...");
+    try {
+      if (editingId)
+        await updateDoc(
+          doc(
+            db,
+            "artifacts",
+            currentAppId,
+            "public",
+            "data",
+            "paints",
+            editingId,
+          ),
+          paintData,
+        );
+      else
+        await addDoc(
+          collection(db, "artifacts", currentAppId, "public", "data", "paints"),
+          { ...paintData, warehouseId, createdAt: Date.now() },
+        );
+
+      const catalogId = generateSafeDocId(paintData.brand, paintData.code);
+      const existsInCatalog = catalog.some(
+        (item) =>
+          normalizeId(item.brand, item.code) ===
+          normalizeId(paintData.brand, paintData.code),
+      );
+      if (!existsInCatalog) {
+        const catalogItem = {
+          brand: paintData.brand,
+          code: paintData.code,
+          name: paintData.name,
+          type: paintData.type,
+          hex: paintData.hex,
+        };
+        await setDoc(
+          doc(
+            db,
+            "artifacts",
+            currentAppId,
+            "public",
+            "data",
+            "catalog",
+            catalogId,
+          ),
+          catalogItem,
+          { merge: true },
+        );
+      }
+      setIsModalOpen(false);
+      setEditingId(null);
+      setTempAiData(null);
+      setSaveStatus("uloženo");
+      if (activeTab !== paintData.status) setActiveTab(paintData.status);
+      setTimeout(() => setSaveStatus(""), 2000);
+      return true;
+    } catch (e) {
+      setSaveStatus("chyba");
+      return false;
+    }
+  };
+  const handleDelete = useCallback(async (id) => {
+    if (db && confirm("Smazat barvu?"))
+      await deleteDoc(
+        doc(db, "artifacts", currentAppId, "public", "data", "paints", id),
+      );
+  }, []);
+  const handleToggleStatus = useCallback(async (id, currentStatus) => {
+    if (db)
+      await updateDoc(
+        doc(db, "artifacts", currentAppId, "public", "data", "paints", id),
+        { status: currentStatus === "owned" ? "buy" : "owned" },
+      );
+  }, []);
+  const handleExportJson = () => {
+    const url = URL.createObjectURL(
+      new Blob([JSON.stringify(paints, null, 2)], { type: "application/json" }),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `backup-${warehouseId}.json`;
+    link.click();
+  };
+  const handleExportTxt = () => {
+    const txt = paints
+      .filter((p) => p.status === "buy")
+      .map((p) => `[ ] ${p.brand} ${p.code} - ${p.name}`)
+      .join("\n");
+    const url = URL.createObjectURL(new Blob([txt], { type: "text/plain" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `buy-list.txt`;
+    link.click();
+  };
+  const handleImport = async (e) => {
+    const file = e.target.files[0];
+    if (!file || !db) return;
+    setIsImporting(true);
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        let added = 0;
+        for (const item of data) {
+          if (
+            paints.some(
+              (p) =>
+                p.brand === item.brand &&
+                p.code === item.code &&
+                p.status === item.status,
+            )
+          )
+            continue;
+          const { id, ...rest } = item;
+          await addDoc(
+            collection(
+              db,
+              "artifacts",
+              currentAppId,
+              "public",
+              "data",
+              "paints",
+            ),
+            { ...rest, warehouseId, createdAt: Date.now() },
+          );
+          added++;
+        }
+        alert(`Importováno: ${added}`);
+      } catch (err) {
+        alert("Chyba importu");
+      }
+      setIsImporting(false);
+    };
+    reader.readAsText(file);
+  };
+  const handleEditStart = useCallback((paint) => {
+    setEditingId(paint.id);
+    setTempAiData(null);
+    setIsModalOpen(true);
+  }, []);
+
+  const availableFilterTypes = useMemo(() => {
+    const uniqueTypes = new Set(STANDARD_TYPES);
+    paints.forEach((p) => {
+      if (p.type) uniqueTypes.add(p.type);
+    });
+    return Array.from(uniqueTypes).sort();
+  }, [paints]);
+
+  const filteredPaints = useMemo(() => {
+    const lowerTerm = searchTerm.toLowerCase();
+    return paints.filter((paint) => {
+      const matchesSearch =
+        !lowerTerm ||
+        paint.name.toLowerCase().includes(lowerTerm) ||
+        paint.code.toLowerCase().includes(lowerTerm) ||
+        paint.brand.toLowerCase().includes(lowerTerm) ||
+        (paint.note && paint.note.toLowerCase().includes(lowerTerm));
+      return (
+        matchesSearch &&
+        paint.status === activeTab &&
+        (activeTypeFilter === "all" || paint.type === activeTypeFilter)
+      );
+    });
+  }, [paints, searchTerm, activeTab, activeTypeFilter]);
+
+  return (
+    <div className="min-h-screen bg-slate-900 text-slate-100 font-sans pb-20 relative">
+      <div className="bg-slate-800 border-b border-slate-700 sticky top-0 z-10 shadow-md">
+        <div className="max-w-md mx-auto px-4 py-4 flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            {/* ZMĚNA: Ikona je favicon.png */}
+            <img
+              src="favicon.png"
+              alt="Logo"
+              className="w-10 h-10 rounded-xl shadow-lg border border-slate-600 object-cover"
+            />
+            <h1 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent hidden sm:block">
+              Modelářský Sklad
+            </h1>
+            <h1 className="text-xl font-bold text-white sm:hidden">Sklad</h1>
+          </div>
+          <div className="flex items-center gap-2">
+            {/* AI BUTTON */}
+            <button
+              onClick={() => setIsAiOpen(true)}
+              className="bg-purple-600/20 hover:bg-purple-600/40 text-purple-300 p-2 rounded-full border border-purple-500/30 shadow-sm transition-all"
+            >
+              <Bot size={20} />
+            </button>
+            <button
+              onClick={() => setIsSettingsOpen(true)}
+              className="bg-slate-700/50 hover:bg-slate-700 text-blue-300 p-2 rounded-full border border-blue-500/20"
+            >
+              <CloudCog size={20} />
+            </button>
+            <button
+              onClick={() => {
+                setEditingId(null);
+                setTempAiData(null);
+                setIsModalOpen(true);
+              }}
+              className="bg-blue-600 hover:bg-blue-500 text-white p-2 rounded-full shadow-lg"
+            >
+              <Plus size={24} />
+            </button>
+          </div>
+        </div>
+        <FilterBar
+          searchTerm={searchTerm}
+          setSearchTerm={setSearchTerm}
+          showFilters={showFilters}
+          setShowFilters={setShowFilters}
+          activeTypeFilter={activeTypeFilter}
+          setActiveTypeFilter={setActiveTypeFilter}
+          availableTypes={availableFilterTypes}
+          saveStatus={saveStatus}
+          warehouseId={warehouseId}
+          isOffline={!db}
+        />
+        <StatsBar
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          ownedCount={paints.filter((p) => p.status === "owned").length}
+          buyCount={paints.filter((p) => p.status === "buy").length}
+        />
+      </div>
+      <div className="max-w-md mx-auto px-4 py-4 space-y-3">
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center py-12 text-slate-500 gap-2">
+            <Loader2 size={32} className="animate-spin text-blue-500" />
+            <p>Načítám...</p>
+          </div>
+        ) : filteredPaints.length === 0 ? (
+          <div className="text-center py-12 text-slate-500">
+            <Droplets size={48} className="mx-auto mb-3 opacity-20" />
+            <p>Nic nenalezeno.</p>
+          </div>
+        ) : (
+          filteredPaints.map((paint) => (
+            <PaintItem
+              key={paint.id}
+              paint={paint}
+              activeTab={activeTab}
+              onEdit={handleEditStart}
+              onToggleStatus={handleToggleStatus}
+              onDelete={handleDelete}
+            />
+          ))
+        )}
+      </div>
+
+      {isSettingsOpen && (
+        <SettingsModal
+          onClose={() => setIsSettingsOpen(false)}
+          warehouseId={warehouseId}
+          setWarehouseId={setWarehouseId}
+          onExportData={handleExportJson}
+          onExportList={handleExportTxt}
+          onImportData={handleImport}
+          isImporting={isImporting}
+          onImportCatalog={handleImportCatalog}
+          catalogSize={catalog.length}
+        />
+      )}
+
+      {/* AI MODAL */}
+      {isAiOpen && (
+        <AiAssistantModal
+          onClose={() => setIsAiOpen(false)}
+          paints={paints}
+          onPaintDetected={handleAiPaintDetected}
+        />
+      )}
+
+      {/* EDIT MODAL - Updated to handle tempAiData */}
+      {isModalOpen && (
+        <EditModalWrapper
+          onClose={() => setIsModalOpen(false)}
+          editingId={editingId}
+          onSave={handleSavePaint}
+          activeTab={activeTab}
+          existingPaints={paints}
+          catalog={catalog}
+          initialData={tempAiData}
+        />
+      )}
+
+      {/* ZMĚNA: Verze aplikace v rohu */}
+      <div className="fixed bottom-1 right-1 px-2 py-1 text-[10px] text-slate-400 font-mono opacity-60 pointer-events-none z-50">
+        {APP_VERSION}
+      </div>
+    </div>
+  );
+}
+
+// Wrapper to cleaner logic for EditModal
+const EditModalWrapper = ({
   onClose,
   editingId,
   onSave,
   activeTab,
   existingPaints,
   catalog,
+  initialData,
 }) => {
   const [formData, setFormData] = useState(() => {
+    if (initialData) {
+      // Data from AI
+      return {
+        brand: initialData.brand || "Tamiya",
+        code: initialData.code || "",
+        name: initialData.name || "",
+        type: initialData.type || "Akryl",
+        status: activeTab,
+        hex: initialData.hex || "#808080",
+        note: "",
+        thinner: "",
+        ratio: "",
+      };
+    }
     if (editingId) {
       const paint = existingPaints.find((p) => p.id === editingId);
       if (paint) return { ...paint };
@@ -524,6 +1249,20 @@ const EditModal = ({
   const [submitError, setSubmitError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
+  // AI data initialization effect (if brand is not standard)
+  useEffect(() => {
+    if (initialData) {
+      if (!STANDARD_BRANDS.includes(initialData.brand)) {
+        setFormData((prev) => ({ ...prev, brand: "Jiná..." }));
+        setCustomBrand(initialData.brand);
+      }
+      if (!STANDARD_TYPES.includes(initialData.type)) {
+        setFormData((prev) => ({ ...prev, type: "Jiný..." }));
+        setCustomType(initialData.type);
+      }
+    }
+  }, [initialData]);
+
   useEffect(() => {
     if (editingId) {
       if (!STANDARD_BRANDS.includes(formData.brand))
@@ -554,7 +1293,8 @@ const EditModal = ({
       if (memoryMatch) foundPaint = { ...memoryMatch };
     }
 
-    if (foundPaint) {
+    if (foundPaint && !initialData) {
+      // Only auto-detect if NOT prefilled by AI
       setAutoDetectFound(true);
       if (!editingId) {
         setFormData((prev) => ({
@@ -578,6 +1318,7 @@ const EditModal = ({
     editingId,
     catalog,
     existingPaints,
+    initialData,
   ]);
 
   const handleSubmit = async (e) => {
@@ -621,6 +1362,7 @@ const EditModal = ({
       name: toTitleCase(formData.name),
       thinner: toTitleCase(formData.thinner),
       note: toSentenceCase(formData.note),
+      hex: formData.hex,
     });
 
     if (!success) {
@@ -634,7 +1376,11 @@ const EditModal = ({
       <div className="bg-slate-800 w-full max-w-md rounded-2xl p-6 shadow-2xl border border-slate-700 animate-in slide-in-from-bottom-10 duration-300 overflow-y-auto max-h-[95vh]">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-xl font-bold text-white">
-            {editingId ? "Úprava barvy" : "Nová barva"}
+            {editingId
+              ? "Úprava barvy"
+              : initialData
+                ? "Přidat nalezenou barvu"
+                : "Nová barva"}
           </h2>
           <button onClick={onClose} className="text-slate-400 hover:text-white">
             <X size={24} />
@@ -811,6 +1557,8 @@ const EditModal = ({
               <Loader2 className="animate-spin" />
             ) : editingId ? (
               "Uložit"
+            ) : initialData ? (
+              "Přidat"
             ) : (
               "Přidat"
             )}
@@ -820,419 +1568,3 @@ const EditModal = ({
     </div>
   );
 };
-
-// ==============================================================================
-// 🚀 HLAVNÍ APLIKACE
-// ==============================================================================
-
-export default function App() {
-  const [user, setUser] = useState(null);
-  const [paints, setPaints] = useState([]);
-  const [catalog, setCatalog] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isImporting, setIsImporting] = useState(false);
-
-  const [warehouseId, setWarehouseId] = useState(() => {
-    try {
-      return (
-        localStorage.getItem("modelarsky_warehouse_id") ||
-        Math.random().toString(36).substring(2, 7).toUpperCase()
-      );
-    } catch {
-      return "DEMO";
-    }
-  });
-
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [editingId, setEditingId] = useState(null);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [activeTab, setActiveTab] = useState("owned");
-  const [showFilters, setShowFilters] = useState(false);
-  const [activeTypeFilter, setActiveTypeFilter] = useState("all");
-  const [saveStatus, setSaveStatus] = useState("");
-
-  useEffect(() => {
-    if (!auth) {
-      setIsLoading(false);
-      return;
-    }
-    const initAuth = async () => {
-      try {
-        if (typeof __initial_auth_token !== "undefined" && __initial_auth_token)
-          await signInWithCustomToken(auth, __initial_auth_token);
-        else await signInAnonymously(auth);
-      } catch (err) {
-        console.error("Auth err:", err);
-      }
-    };
-    initAuth();
-    return onAuthStateChanged(auth, setUser);
-  }, []);
-
-  useEffect(() => {
-    if (!user || !db) return;
-    setIsLoading(true);
-    try {
-      const unsubPaints = onSnapshot(
-        collection(db, "artifacts", currentAppId, "public", "data", "paints"),
-        (snapshot) => {
-          const allPaints = snapshot.docs.map((doc) => ({
-            id: doc.id,
-            ...doc.data(),
-          }));
-          setPaints(
-            allPaints
-              .filter((p) => p.warehouseId === warehouseId)
-              .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)),
-          );
-          setIsLoading(false);
-        },
-      );
-
-      const unsubCatalog = onSnapshot(
-        collection(db, "artifacts", currentAppId, "public", "data", "catalog"),
-        (snapshot) => {
-          setCatalog(snapshot.docs.map((doc) => doc.data()));
-        },
-      );
-
-      return () => {
-        unsubPaints();
-        unsubCatalog();
-      };
-    } catch (err) {
-      setIsLoading(false);
-    }
-  }, [user, warehouseId]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem("modelarsky_warehouse_id", warehouseId);
-    } catch (e) {}
-  }, [warehouseId]);
-
-  const handleImportCatalog = async (e) => {
-    const file = e.target.files[0];
-    if (
-      !file ||
-      !db ||
-      !confirm("Pozor: Toto nahraje data do globálního katalogu. Pokračovat?")
-    )
-      return;
-
-    setIsLoading(true);
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      try {
-        const data = JSON.parse(ev.target.result);
-        if (!Array.isArray(data)) throw new Error("Soubor musí být JSON pole.");
-
-        const chunkSize = 450;
-        const catalogRef = collection(
-          db,
-          "artifacts",
-          currentAppId,
-          "public",
-          "data",
-          "catalog",
-        );
-        let totalProcessed = 0;
-
-        for (let i = 0; i < data.length; i += chunkSize) {
-          const chunk = data.slice(i, i + chunkSize);
-          const batch = writeBatch(db);
-          chunk.forEach((item) => {
-            if (item.brand && item.code) {
-              const docId = generateSafeDocId(item.brand, item.code);
-              batch.set(doc(catalogRef, docId), item, { merge: true });
-              totalProcessed++;
-            }
-          });
-          await batch.commit();
-        }
-        alert(`Katalog aktualizován! (${totalProcessed} pol.)`);
-        setIsSettingsOpen(false);
-      } catch (err) {
-        alert("Chyba: " + err.message);
-      } finally {
-        setIsLoading(false);
-        e.target.value = "";
-      }
-    };
-    reader.readAsText(file);
-  };
-
-  const availableFilterTypes = useMemo(() => {
-    const uniqueTypes = new Set(STANDARD_TYPES);
-    paints.forEach((p) => {
-      if (p.type) uniqueTypes.add(p.type);
-    });
-    return Array.from(uniqueTypes).sort();
-  }, [paints]);
-
-  const filteredPaints = useMemo(() => {
-    const lowerTerm = searchTerm.toLowerCase();
-    return paints.filter((paint) => {
-      const matchesSearch =
-        !lowerTerm ||
-        paint.name.toLowerCase().includes(lowerTerm) ||
-        paint.code.toLowerCase().includes(lowerTerm) ||
-        paint.brand.toLowerCase().includes(lowerTerm) ||
-        (paint.note && paint.note.toLowerCase().includes(lowerTerm));
-      return (
-        matchesSearch &&
-        paint.status === activeTab &&
-        (activeTypeFilter === "all" || paint.type === activeTypeFilter)
-      );
-    });
-  }, [paints, searchTerm, activeTab, activeTypeFilter]);
-
-  const handleEditStart = useCallback((paint) => {
-    setEditingId(paint.id);
-    setIsModalOpen(true);
-  }, []);
-  const handleDelete = useCallback(async (id) => {
-    if (db && confirm("Smazat barvu?"))
-      await deleteDoc(
-        doc(db, "artifacts", currentAppId, "public", "data", "paints", id),
-      );
-  }, []);
-  const handleToggleStatus = useCallback(async (id, currentStatus) => {
-    if (db)
-      await updateDoc(
-        doc(db, "artifacts", currentAppId, "public", "data", "paints", id),
-        { status: currentStatus === "owned" ? "buy" : "owned" },
-      );
-  }, []);
-
-  const handleSavePaint = async (paintData) => {
-    if (!db) return false;
-    setSaveStatus("ukládám...");
-    try {
-      if (editingId)
-        await updateDoc(
-          doc(
-            db,
-            "artifacts",
-            currentAppId,
-            "public",
-            "data",
-            "paints",
-            editingId,
-          ),
-          paintData,
-        );
-      else
-        await addDoc(
-          collection(db, "artifacts", currentAppId, "public", "data", "paints"),
-          { ...paintData, warehouseId, createdAt: Date.now() },
-        );
-
-      // --- CROWDSOURCING LOGIKA ---
-      const catalogId = generateSafeDocId(paintData.brand, paintData.code);
-      const existsInCatalog = catalog.some(
-        (item) =>
-          normalizeId(item.brand, item.code) ===
-          normalizeId(paintData.brand, paintData.code),
-      );
-
-      if (!existsInCatalog) {
-        const catalogItem = {
-          brand: paintData.brand,
-          code: paintData.code,
-          name: paintData.name,
-          type: paintData.type,
-          hex: paintData.hex,
-        };
-        await setDoc(
-          doc(
-            db,
-            "artifacts",
-            currentAppId,
-            "public",
-            "data",
-            "catalog",
-            catalogId,
-          ),
-          catalogItem,
-          { merge: true },
-        );
-      }
-      // -----------------------------
-
-      setIsModalOpen(false);
-      setEditingId(null);
-      setSaveStatus("uloženo");
-      if (activeTab !== paintData.status) setActiveTab(paintData.status);
-      setTimeout(() => setSaveStatus(""), 2000);
-      return true;
-    } catch (e) {
-      setSaveStatus("chyba");
-      return false;
-    }
-  };
-
-  const handleImport = async (e) => {
-    const file = e.target.files[0];
-    if (!file || !db) return;
-    setIsImporting(true);
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      try {
-        const data = JSON.parse(ev.target.result);
-        let added = 0;
-        for (const item of data) {
-          if (
-            paints.some(
-              (p) =>
-                p.brand === item.brand &&
-                p.code === item.code &&
-                p.status === item.status,
-            )
-          )
-            continue;
-          const { id, ...rest } = item;
-          await addDoc(
-            collection(
-              db,
-              "artifacts",
-              currentAppId,
-              "public",
-              "data",
-              "paints",
-            ),
-            { ...rest, warehouseId, createdAt: Date.now() },
-          );
-          added++;
-        }
-        alert(`Importováno: ${added}`);
-      } catch (err) {
-        alert("Chyba importu");
-      }
-      setIsImporting(false);
-    };
-    reader.readAsText(file);
-  };
-
-  const handleExportJson = () => {
-    const url = URL.createObjectURL(
-      new Blob([JSON.stringify(paints, null, 2)], { type: "application/json" }),
-    );
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `backup-${warehouseId}.json`;
-    link.click();
-  };
-  const handleExportTxt = () => {
-    const txt = paints
-      .filter((p) => p.status === "buy")
-      .map((p) => `[ ] ${p.brand} ${p.code} - ${p.name}`)
-      .join("\n");
-    const url = URL.createObjectURL(new Blob([txt], { type: "text/plain" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `buy-list.txt`;
-    link.click();
-  };
-
-  return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 font-sans pb-20">
-      <div className="bg-slate-800 border-b border-slate-700 sticky top-0 z-10 shadow-md">
-        <div className="max-w-md mx-auto px-4 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-2">
-            <div className="bg-blue-600 p-2 rounded-lg">
-              <Paintbrush size={20} className="text-white" />
-            </div>
-            <h1 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent hidden sm:block">
-              Modelářský Sklad
-            </h1>
-            <h1 className="text-xl font-bold text-white sm:hidden">Sklad</h1>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setIsSettingsOpen(true)}
-              className="bg-slate-700/50 hover:bg-slate-700 text-blue-300 p-2 rounded-full border border-blue-500/20"
-            >
-              <CloudCog size={20} />
-            </button>
-            <button
-              onClick={() => {
-                setEditingId(null);
-                setIsModalOpen(true);
-              }}
-              className="bg-blue-600 hover:bg-blue-500 text-white p-2 rounded-full shadow-lg"
-            >
-              <Plus size={24} />
-            </button>
-          </div>
-        </div>
-        <FilterBar
-          searchTerm={searchTerm}
-          setSearchTerm={setSearchTerm}
-          showFilters={showFilters}
-          setShowFilters={setShowFilters}
-          activeTypeFilter={activeTypeFilter}
-          setActiveTypeFilter={setActiveTypeFilter}
-          availableTypes={availableFilterTypes}
-          saveStatus={saveStatus}
-          warehouseId={warehouseId}
-          isOffline={!db}
-        />
-        <StatsBar
-          activeTab={activeTab}
-          setActiveTab={setActiveTab}
-          ownedCount={paints.filter((p) => p.status === "owned").length}
-          buyCount={paints.filter((p) => p.status === "buy").length}
-        />
-      </div>
-      <div className="max-w-md mx-auto px-4 py-4 space-y-3">
-        {isLoading ? (
-          <div className="flex flex-col items-center justify-center py-12 text-slate-500 gap-2">
-            <Loader2 size={32} className="animate-spin text-blue-500" />
-            <p>Načítám...</p>
-          </div>
-        ) : filteredPaints.length === 0 ? (
-          <div className="text-center py-12 text-slate-500">
-            <Droplets size={48} className="mx-auto mb-3 opacity-20" />
-            <p>Nic nenalezeno.</p>
-          </div>
-        ) : (
-          filteredPaints.map((paint) => (
-            <PaintItem
-              key={paint.id}
-              paint={paint}
-              activeTab={activeTab}
-              onEdit={handleEditStart}
-              onToggleStatus={handleToggleStatus}
-              onDelete={handleDelete}
-            />
-          ))
-        )}
-      </div>
-      {isSettingsOpen && (
-        <SettingsModal
-          onClose={() => setIsSettingsOpen(false)}
-          warehouseId={warehouseId}
-          setWarehouseId={setWarehouseId}
-          onExportData={handleExportJson}
-          onExportList={handleExportTxt}
-          onImportData={handleImport}
-          isImporting={isImporting}
-          onImportCatalog={handleImportCatalog}
-          catalogSize={catalog.length}
-        />
-      )}
-      {isModalOpen && (
-        <EditModal
-          onClose={() => setIsModalOpen(false)}
-          editingId={editingId}
-          onSave={handleSavePaint}
-          activeTab={activeTab}
-          existingPaints={paints}
-          catalog={catalog}
-        />
-      )}
-    </div>
-  );
-}
