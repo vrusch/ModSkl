@@ -64,7 +64,7 @@ import {
 // ==========================================
 
 // ZDE MĚŇTE ČÍSLO VERZE
-const APP_VERSION = "v1.5.0";
+const APP_VERSION = "v1.5.0-ai-draft";
 
 // ==============================================================================
 // 🤖 AI & GEMINI CONFIGURATION
