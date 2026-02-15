@@ -64,13 +64,25 @@ import {
 // ==========================================
 
 // ZDE MĚŇTE ČÍSLO VERZE
-const APP_VERSION = "v1.5.0-ai-draft";
+const APP_VERSION = "v1.5.1-ai-implemented";
+
+const getEnv = (key) => {
+  try {
+    if (import.meta && import.meta.env && import.meta.env[key])
+      return import.meta.env[key];
+  } catch (e) {}
+  try {
+    if (typeof process !== "undefined" && process.env && process.env[key])
+      return process.env[key];
+  } catch (e) {}
+  return "";
+};
 
 // ==============================================================================
 // 🤖 AI & GEMINI CONFIGURATION
 // ==============================================================================
 
-const apiKey = ""; // API Key is injected by the environment at runtime
+const apiKey = getEnv("VITE_GEMINI_API_KEY"); // API Key is injected by the environment at runtime
 
 async function callGeminiVision(imageBase64) {
   try {
@@ -270,18 +282,6 @@ const KitHubColorsHorizontal = ({ className = "h-16" }) => (
 // ==============================================================================
 // 🔧 KONFIGURACE FIREBASE
 // ==============================================================================
-
-const getEnv = (key) => {
-  try {
-    if (import.meta && import.meta.env && import.meta.env[key])
-      return import.meta.env[key];
-  } catch (e) {}
-  try {
-    if (typeof process !== "undefined" && process.env && process.env[key])
-      return process.env[key];
-  } catch (e) {}
-  return "";
-};
 
 const firebaseConfig = {
   apiKey: getEnv("VITE_FIREBASE_API_KEY"),
