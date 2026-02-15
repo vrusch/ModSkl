@@ -69,7 +69,7 @@ import {
 // ==========================================
 
 // ZDE MĚŇTE ČÍSLO VERZE
-const APP_VERSION = "v1.5.2-google_auth";
+const APP_VERSION = "v1.5.3-visual-polish";
 
 const getEnv = (key) => {
   try {
@@ -542,7 +542,7 @@ const SettingsModal = ({
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className="bg-slate-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl border border-slate-700 overflow-y-auto max-h-[90vh]">
+      <div className="bg-slate-800 w-full max-w-sm rounded-2xl p-6 shadow-2xl border border-slate-700 overflow-y-auto max-h-[90vh] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-bold text-white flex items-center gap-2">
             <CloudCog className="text-blue-400" /> Nastavení
