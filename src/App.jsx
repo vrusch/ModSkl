@@ -168,6 +168,105 @@ const generateSafeDocId = (brand, code) => {
   return `${safeBrand}_${safeCode}`;
 };
 
+// ---  SVG logo  kithub :colors---
+const KitHubColorsHorizontal = ({ className = "h-16" }) => (
+  <svg
+    className={className}
+    viewBox="0 0 250 40"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <defs>
+      <linearGradient id="horizGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stopColor="#fef08a" />
+        <stop offset="50%" stopColor="#86efac" />
+        <stop offset="100%" stopColor="#22d3ee" />
+      </linearGradient>
+    </defs>
+
+    {/* Část 1: KitHub Wordmark */}
+    <g>
+      <text
+        x="0"
+        y="30"
+        fill="white"
+        fontFamily="system-ui, sans-serif"
+        fontWeight="900"
+        fontSize="28"
+        letterSpacing="-1"
+      >
+        Kit
+      </text>
+      <text
+        x="42"
+        y="30"
+        fill="#3b82f6"
+        fontFamily="system-ui, sans-serif"
+        fontWeight="900"
+        fontSize="28"
+        letterSpacing="-1"
+      >
+        Hub
+      </text>
+      <g transform="translate(100, 5)">
+        <rect x="0" y="0" width="6" height="30" rx="3" fill="#334155" />
+        <rect
+          x="4"
+          y="6"
+          width="12"
+          height="4"
+          rx="2"
+          fill="#3b82f6"
+          opacity="0.9"
+        />
+        <rect
+          x="4"
+          y="13"
+          width="16"
+          height="4"
+          rx="2"
+          fill="#f97316"
+          opacity="0.9"
+        />
+        <rect
+          x="4"
+          y="20"
+          width="12"
+          height="4"
+          rx="2"
+          fill="#3b82f6"
+          opacity="0.9"
+        />
+      </g>
+    </g>
+
+    {/* Část 2: : COLORS napravo od lišty */}
+    <g transform="translate(122, 0)">
+      <text
+        x="0"
+        y="30"
+        fill="#facc15"
+        fontFamily="system-ui, sans-serif"
+        fontWeight="900"
+        fontSize="24"
+      >
+        :
+      </text>
+      <text
+        x="10"
+        y="30"
+        fill="url(#horizGradient)"
+        fontFamily="system-ui, sans-serif"
+        fontWeight="900"
+        fontSize="24"
+        letterSpacing="-0.5"
+      >
+        COLORS
+      </text>
+    </g>
+  </svg>
+);
+
 // ==============================================================================
 // 🔧 KONFIGURACE FIREBASE
 // ==============================================================================
@@ -1068,17 +1167,9 @@ export default function App() {
       <div className="bg-slate-800 border-b border-slate-700 sticky top-0 z-10 shadow-md">
         <div className="max-w-md mx-auto px-4 py-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
-            {/* ZMĚNA: Ikona je favicon.png */}
-            <img
-              src="favicon.png"
-              alt="Logo"
-              className="w-10 h-10 rounded-xl shadow-lg border border-slate-600 object-cover"
-            />
-            <h1 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent hidden sm:block">
-              Modelářský Sklad
-            </h1>
-            <h1 className="text-xl font-bold text-white sm:hidden">Sklad</h1>
+            <KitHubColorsHorizontal className="h-8" />
           </div>
+
           <div className="flex items-center gap-2">
             {/* AI BUTTON */}
             <button
